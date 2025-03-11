@@ -1,0 +1,27 @@
+flutter_native_splash:
+  # Basic splash screen config
+  #color: "#FFFFFF"
+  background_image: "assets/background.png"
+  image: "assets/monogramhq.png"
+
+  # Use branding mode to prevent the logo from being cropped into a circle
+  android_12:
+    # Disable the Android 12 splash screen to use the regular splash screen
+    # This will prevent the logo from being rounded
+    image: "assets/monogramhq.png"
+    #color: "#FFFFFF"
+    background_image: "assets/background.png"
+    #icon_background_color: "#FFFFFF"
+    branding: "assets/to-do-high-resolution-logo-transparent.png"
+    image_dark: "assets/monogramhq.png"
+    color_dark: "#121212"
+    background_image_dark: "assets/background.png"
+    branding_dark: "assets/to-do-high-resolution-logo-transparent.png"
+
+  # Make sure all platforms are enabled
+  web: false
+  android: true
+  ios: true
+
+  # Other settings
+  fullscreen: false

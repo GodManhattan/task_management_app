@@ -1,0 +1,181 @@
+import 'package:equatable/equatable.dart';
+import 'package:uuid/uuid.dart';
+
+/// Represents the status of a task in the system
+enum TaskStatus { pending, inProgress, underReview, completed, canceled }
+
+/// Represents the priority level of a task
+enum TaskPriority { low, medium, high, urgent }
+
+class Task extends Equatable {
+  /// Unique identifier for the task
+  final String id;
+
+  /// Title of the task
+  final String title;
+
+  /// Detailed description of the task
+  final String? description;
+
+  /// Current status of the task
+  final TaskStatus status;
+
+  /// Priority level of the task
+  final TaskPriority priority;
+
+  /// Due date for task completion
+  final DateTime? dueDate;
+
+  /// When the task was created
+  final DateTime createdAt;
+
+  /// When the task was last updated
+  final DateTime updatedAt;
+
+  /// ID of the user who created the task
+  final String ownerId;
+
+  /// ID of the user the task is assigned to
+  final String? assigneeId;
+
+  /// Tags associated with the task
+  final List<String> tags;
+
+  /// Constructor
+  const Task({
+    required this.id,
+    required this.title,
+    this.description,
+    required this.status,
+    required this.priority,
+    this.dueDate,
+    required this.createdAt,
+    required this.updatedAt,
+    required this.ownerId,
+    this.assigneeId,
+    this.tags = const [],
+  });
+
+  /// Create a new task with default values
+  factory Task.create({
+    required String title,
+    String? description,
+    TaskPriority priority = TaskPriority.medium,
+    DateTime? dueDate,
+    required String ownerId,
+    String? assigneeId,
+    List<String> tags = const [],
+  }) {
+    final now = DateTime.now();
+    return Task(
+      id: const Uuid().v4(),
+      title: title,
+      description: description,
+      status: TaskStatus.pending,
+      priority: priority,
+      dueDate: dueDate,
+      createdAt: now,
+      updatedAt: now,
+      ownerId: ownerId,
+      assigneeId: assigneeId,
+      tags: tags,
+    );
+  }
+
+  /// Create a Task from a JSON map
+  factory Task.fromJson(Map<String, dynamic> json) {
+    return Task(
+      id: json['id'],
+      title: json['title'],
+      description: json['description'],
+      status: _parseStatus(json['status']),
+      priority: _parsePriority(json['priority']),
+      dueDate:
+          json['due_date'] != null ? DateTime.parse(json['due_date']) : null,
+      createdAt: DateTime.parse(json['created_at']),
+      updatedAt: DateTime.parse(json['updated_at']),
+      ownerId: json['owner_id'],
+      assigneeId: json['assignee_id'],
+      tags: json['tags'] != null ? List<String>.from(json['tags']) : const [],
+    );
+  }
+
+  /// Convert Task to a JSON map
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'title': title,
+      'description': description,
+      'status': status.name,
+      'priority': priority.name,
+      'due_date': dueDate?.toIso8601String(),
+      'created_at': createdAt.toIso8601String(),
+      'updated_at': updatedAt.toIso8601String(),
+      'owner_id': ownerId,
+      'assignee_id': assigneeId,
+      'tags': tags,
+    };
+  }
+
+  /// Create a copy of this Task with some updated fields
+  Task copyWith({
+    String? title,
+    String? description,
+    TaskStatus? status,
+    TaskPriority? priority,
+    DateTime? dueDate,
+    String? assigneeId,
+    List<String>? tags,
+  }) {
+    return Task(
+      id: id,
+      title: title ?? this.title,
+      description: description ?? this.description,
+      status: status ?? this.status,
+      priority: priority ?? this.priority,
+      dueDate: dueDate ?? this.dueDate,
+      createdAt: createdAt,
+      updatedAt: DateTime.now(),
+      ownerId: ownerId,
+      assigneeId: assigneeId ?? this.assigneeId,
+      tags: tags ?? this.tags,
+    );
+  }
+
+  /// Check if task is overdue
+  bool get isOverdue {
+    if (dueDate == null) return false;
+    return dueDate!.isBefore(DateTime.now()) && status != TaskStatus.completed;
+  }
+
+  /// Parse task status from string
+  static TaskStatus _parseStatus(String status) {
+    return TaskStatus.values.firstWhere(
+      (e) => e.name == status,
+      orElse: () => TaskStatus.pending,
+    );
+  }
+
+  /// Parse task priority from string
+  static TaskPriority _parsePriority(String priority) {
+    return TaskPriority.values.firstWhere(
+      (e) => e.name == priority,
+      orElse: () => TaskPriority.medium,
+    );
+  }
+
+  @override
+  List<Object?> get props => [
+    id,
+    title,
+    description,
+    status,
+    priority,
+    dueDate,
+    createdAt,
+    updatedAt,
+    ownerId,
+    assigneeId,
+    tags,
+  ];
+}
