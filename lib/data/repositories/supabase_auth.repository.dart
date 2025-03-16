@@ -148,4 +148,24 @@ class SupabaseAuthRepository implements AuthRepository {
   Stream<AuthState> onAuthStateChange() {
     return _supabaseClient.auth.onAuthStateChange;
   }
+
+  @override
+  Future<bool> isSessionValid() async {
+    final currentSession = _supabaseClient.auth.currentSession;
+    if (currentSession == null) return false;
+
+    // Verifica si el token ha expirado o expirará en los próximos 5 minutos
+    final expiresAt = DateTime.fromMillisecondsSinceEpoch(
+      currentSession.expiresAt! * 1000,
+    );
+    return expiresAt.isAfter(DateTime.now().add(Duration(minutes: 5)));
+  }
+
+  @override
+  Future<void> refreshSession() async {
+    final response = await _supabaseClient.auth.refreshSession();
+    if (response.session == null) {
+      throw Exception('No active session found');
+    }
+  }
 }

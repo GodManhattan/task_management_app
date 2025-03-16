@@ -25,4 +25,7 @@ abstract class AuthRepository {
 
   /// Set up auth state change listener
   Stream<supabase.AuthState> onAuthStateChange();
+
+  Future<bool> isSessionValid();
+  Future<void> refreshSession();
 }

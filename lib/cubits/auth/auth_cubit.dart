@@ -94,4 +94,40 @@ class AuthCubit extends Cubit<AuthState> {
     _authSubscription?.cancel();
     return super.close();
   }
+
+  Future<void> refreshAuthState() async {
+    emit(AuthLoading());
+    try {
+      // Forzar la actualización de la sesión en Supabase
+      await _authRepository.refreshSession();
+
+      final user = _authRepository.getCurrentUser();
+      if (user != null) {
+        emit(AuthAuthenticated(user as usermodel.User));
+      } else {
+        emit(AuthUnauthenticated());
+      }
+    } catch (e) {
+      emit(AuthUnauthenticated());
+    }
+  }
+
+  Future<void> verifySession() async {
+    emit(AuthLoading());
+    try {
+      bool sessionValid = await _authRepository.isSessionValid();
+      if (!sessionValid) {
+        emit(AuthUnauthenticated());
+        return;
+      }
+      final user = _authRepository.getCurrentUser();
+      if (user != null) {
+        emit(AuthAuthenticated(user as usermodel.User));
+      } else {
+        emit(AuthUnauthenticated());
+      }
+    } catch (e) {
+      emit(AuthUnauthenticated());
+    }
+  }
 }

@@ -85,10 +85,22 @@ class AppRouter {
     final authRepository = serviceLocator<AuthRepository>();
     final isAuthenticated = await authRepository.isAuthenticated();
 
+    // Skip auth check for splash/loading screens
+    if (state.matchedLocation == '/') return null;
+
     final isAuthRoute =
         state.matchedLocation == '/login' ||
         state.matchedLocation == '/register' ||
         state.matchedLocation == '/reset-password';
+
+    // Perform a fresh session validation
+    final isValid = await authRepository.isSessionValid();
+
+    if (!isValid && !isAuthRoute) {
+      // Update the auth state in the cubit
+      authRepository.signOut();
+      return '/login';
+    }
 
     // If splash screen, no redirect
     if (state.matchedLocation == '/') {
