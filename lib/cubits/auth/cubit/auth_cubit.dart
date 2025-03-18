@@ -2,6 +2,8 @@ import 'dart:async';
 
 import 'package:bloc/bloc.dart';
 import 'package:equatable/equatable.dart';
+import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:logger/logger.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:task_management_app/domain/models/user.model.dart' as usermodel;
@@ -48,11 +50,19 @@ class AuthCubit extends Cubit<AuthState> {
     }
   }
 
-  Future<void> signIn(String email, String password) async {
+  Future<void> signIn(
+    String email,
+    String password,
+    BuildContext context,
+  ) async {
     emit(AuthLoading());
     try {
       final user = await _authRepository.signIn(email, password);
       emit(AuthAuthenticated(user));
+      // // Navigate to tasks page
+      // if (context.mounted) {
+      //   context.go('/tasks');
+      // }
     } catch (e) {
       emit(AuthError('Failed to sign in: ${e.toString()}'));
     }

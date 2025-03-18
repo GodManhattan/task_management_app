@@ -5,10 +5,14 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:task_management_app/core/di/service_locator.dart';
 import 'package:task_management_app/core/routing/app_router.dart';
 import 'package:task_management_app/core/routing/navigation_helpers.dart';
-import 'package:task_management_app/cubits/auth/cubit/auth_cubit.dart' as authCubit;
+import 'package:task_management_app/cubits/auth/cubit/auth_cubit.dart'
+    as authCubit;
 import 'package:task_management_app/cubits/auth/cubit/auth_cubit.dart';
+import 'package:task_management_app/cubits/task/cubit/task_cubit.dart';
+import 'package:task_management_app/data/repositories/supabase_task.repository.dart';
 import 'package:task_management_app/data/secure_local_storage.dart';
 import 'package:task_management_app/domain/repositories/auth.repository.dart';
+import 'package:task_management_app/domain/repositories/task.repository.dart';
 import 'package:task_management_app/handlers/handlers.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_native_splash/flutter_native_splash.dart';
@@ -50,6 +54,9 @@ void main() async {
                 (context) =>
                     authCubit.AuthCubit(serviceLocator<AuthRepository>()),
           ),
+          BlocProvider<TaskCubit>(
+            create: (context) => TaskCubit(serviceLocator<TaskRepository>()),
+          ),
           // Other providers
         ],
         child: const MainApp(),
@@ -75,19 +82,6 @@ class MainApp extends StatelessWidget {
         useMaterial3: true,
       ),
       routerConfig: AppRouter.router,
-      builder: (context, child) {
-        return BlocListener<AuthCubit, authCubit.AuthState>(
-          listener: (context, state) {
-            if (state is AuthAuthenticated) {
-              // Navigate with GoRouter directly instead of context extension
-              AppRouter.router.go('/tasks');
-            } else if (state is AuthUnauthenticated) {
-              AppRouter.router.go('/login');
-            }
-          },
-          child: child!,
-        );
-      },
     );
   }
 }

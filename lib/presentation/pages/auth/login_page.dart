@@ -1,5 +1,7 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:go_router/go_router.dart';
 import 'package:task_management_app/cubits/auth/cubit/auth_cubit.dart';
 import 'package:task_management_app/core/routing/navigation_helpers.dart';
 
@@ -35,6 +37,7 @@ class _LoginPageState extends State<LoginPage> {
       context.read<AuthCubit>().signIn(
         _emailController.text.trim(),
         _passwordController.text,
+        context,
       );
     }
   }
@@ -47,6 +50,13 @@ class _LoginPageState extends State<LoginPage> {
         listener: (context, state) {
           if (state is AuthLoading) {
             setState(() => _isLoading = true);
+          }
+          if (state is AuthAuthenticated) {
+            // Navigate to tasks page on successful login
+            if (kDebugMode) {
+              print("Login successful, navigating to tasks page");
+            }
+            context.go('/tasks');
           } else {
             setState(() => _isLoading = false);
 

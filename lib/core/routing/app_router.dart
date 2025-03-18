@@ -32,7 +32,7 @@ class AppRouter {
         builder: (context, state) => const RegisterPage(),
       ),
       GoRoute(
-        path: '/forgot-password',
+        path: '/reset-password',
         builder: (context, state) => const ForgotPasswordPage(),
       ),
 
