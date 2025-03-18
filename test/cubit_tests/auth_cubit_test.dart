@@ -3,7 +3,7 @@ import 'package:bloc_test/bloc_test.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mockito/mockito.dart';
 import 'package:mockito/annotations.dart';
-import 'package:task_management_app/cubits/auth/auth_cubit.dart';
+import 'package:task_management_app/cubits/auth/cubit/auth_cubit.dart';
 import 'package:task_management_app/domain/models/user.model.dart';
 import 'package:task_management_app/domain/repositories/auth.repository.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' as supabase;

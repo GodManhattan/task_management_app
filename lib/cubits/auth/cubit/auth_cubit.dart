@@ -6,7 +6,7 @@ import 'package:logger/logger.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:task_management_app/domain/models/user.model.dart' as usermodel;
 
-import '../../domain/repositories/auth.repository.dart';
+import '../../../domain/repositories/auth.repository.dart';
 
 part 'auth_state.dart';
 

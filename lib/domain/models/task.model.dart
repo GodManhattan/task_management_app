@@ -1,4 +1,5 @@
 import 'package:equatable/equatable.dart';
+import 'package:task_management_app/domain/models/comment.model.dart';
 import 'package:uuid/uuid.dart';
 
 /// Represents the status of a task in the system
@@ -8,38 +9,18 @@ enum TaskStatus { pending, inProgress, underReview, completed, canceled }
 enum TaskPriority { low, medium, high, urgent }
 
 class Task extends Equatable {
-  /// Unique identifier for the task
   final String id;
-
-  /// Title of the task
   final String title;
-
-  /// Detailed description of the task
   final String? description;
-
-  /// Current status of the task
   final TaskStatus status;
-
-  /// Priority level of the task
   final TaskPriority priority;
-
-  /// Due date for task completion
   final DateTime? dueDate;
-
-  /// When the task was created
   final DateTime createdAt;
-
-  /// When the task was last updated
   final DateTime updatedAt;
-
-  /// ID of the user who created the task
   final String ownerId;
-
-  /// ID of the user the task is assigned to
   final String? assigneeId;
-
-  /// Tags associated with the task
-  final List<String> tags;
+  final List<String>? tags;
+  final List<Comment>? comments;
 
   /// Constructor
   const Task({
@@ -54,6 +35,7 @@ class Task extends Equatable {
     required this.ownerId,
     this.assigneeId,
     this.tags = const [],
+    this.comments = const [],
   });
 
   /// Create a new task with default values
@@ -65,6 +47,7 @@ class Task extends Equatable {
     required String ownerId,
     String? assigneeId,
     List<String> tags = const [],
+    List<Comment> comments = const [],
   }) {
     final now = DateTime.now();
     return Task(
@@ -79,6 +62,7 @@ class Task extends Equatable {
       ownerId: ownerId,
       assigneeId: assigneeId,
       tags: tags,
+      comments: comments,
     );
   }
 
@@ -97,6 +81,11 @@ class Task extends Equatable {
       ownerId: json['owner_id'],
       assigneeId: json['assignee_id'],
       tags: json['tags'] != null ? List<String>.from(json['tags']) : const [],
+      comments:
+          (json['comments'] as List?)
+              ?.map((c) => Comment.fromJson(c))
+              .toList() ??
+          const [],
     );
   }
 
@@ -114,6 +103,7 @@ class Task extends Equatable {
       'owner_id': ownerId,
       'assignee_id': assigneeId,
       'tags': tags,
+      'comments': comments,
     };
   }
 
@@ -126,6 +116,7 @@ class Task extends Equatable {
     DateTime? dueDate,
     String? assigneeId,
     List<String>? tags,
+    List<Comment>? comments,
   }) {
     return Task(
       id: id,
@@ -139,6 +130,7 @@ class Task extends Equatable {
       ownerId: ownerId,
       assigneeId: assigneeId ?? this.assigneeId,
       tags: tags ?? this.tags,
+      comments: comments ?? this.comments,
     );
   }
 
@@ -177,5 +169,16 @@ class Task extends Equatable {
     ownerId,
     assigneeId,
     tags,
+    comments,
   ];
+
+  Task addComment(String userId, String content, List<String> attachments) {
+    final newComment = Comment.create(
+      taskId: id,
+      userId: userId,
+      content: content,
+      attachments: attachments,
+    );
+    return copyWith(comments: [...?comments, newComment]);
+  }
 }
