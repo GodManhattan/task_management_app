@@ -1,6 +1,9 @@
 import 'package:get_it/get_it.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:task_management_app/cubits/auth/cubit/auth_cubit.dart';
+import 'package:task_management_app/cubits/user/cubit/user_cubit.dart';
+import 'package:task_management_app/data/repositories/supabase_user.repository.dart';
+import 'package:task_management_app/domain/repositories/user.repository.dart';
 import '../../data/repositories/supabase_auth.repository.dart';
 import '../../data/repositories/supabase_task.repository.dart';
 import '../../data/repositories/supabase_comment.repository.dart';
@@ -30,5 +33,12 @@ Future<void> setupServiceLocator() async {
 
   serviceLocator.registerLazySingleton<AuthCubit>(
     () => AuthCubit(serviceLocator<AuthRepository>()),
+  );
+
+  serviceLocator.registerLazySingleton<UserRepository>(
+    () => SupabaseUserRepository(serviceLocator<SupabaseClient>()),
+  );
+  serviceLocator.registerFactory<UserCubit>(
+    () => UserCubit(serviceLocator<UserRepository>()),
   );
 }

@@ -9,6 +9,7 @@ import 'package:task_management_app/cubits/auth/cubit/auth_cubit.dart'
     as authCubit;
 import 'package:task_management_app/cubits/auth/cubit/auth_cubit.dart';
 import 'package:task_management_app/cubits/task/cubit/task_cubit.dart';
+import 'package:task_management_app/cubits/user/cubit/user_cubit.dart';
 import 'package:task_management_app/data/repositories/supabase_task.repository.dart';
 import 'package:task_management_app/data/secure_local_storage.dart';
 import 'package:task_management_app/domain/repositories/auth.repository.dart';
@@ -57,7 +58,9 @@ void main() async {
           BlocProvider<TaskCubit>(
             create: (context) => TaskCubit(serviceLocator<TaskRepository>()),
           ),
-          // Other providers
+          BlocProvider<UserCubit>(
+            create: (context) => serviceLocator<UserCubit>(),
+          ),
         ],
         child: const MainApp(),
       ),
