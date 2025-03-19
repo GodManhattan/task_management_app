@@ -46,8 +46,8 @@ class Task extends Equatable {
     DateTime? dueDate,
     required String ownerId,
     String? assigneeId,
-    List<String> tags = const [],
-    List<Comment> comments = const [],
+    List<String>? tags = const [],
+    List<Comment>? comments = const [],
   }) {
     final now = DateTime.now();
     return Task(

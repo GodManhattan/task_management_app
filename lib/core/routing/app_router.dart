@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:task_management_app/core/routing/global_route_observer.dart';
 import 'package:task_management_app/presentation/pages/home/team_page.dart';
 import '../../presentation/pages/auth/login_page.dart';
 import '../../presentation/pages/auth/register_page.dart';
@@ -16,11 +17,11 @@ import '../../domain/repositories/auth.repository.dart';
 class AppRouter {
   static final _rootNavigatorKey = GlobalKey<NavigatorState>();
   static final _shellNavigatorKey = GlobalKey<NavigatorState>();
-
   static final GoRouter router = GoRouter(
     navigatorKey: _rootNavigatorKey,
     initialLocation: '/login',
     redirect: _handleRedirect,
+    observers: [appRouteObserver],
     routes: [
       // Splash screen
       GoRoute(path: '/', builder: (context, state) => const SplashPage()),
@@ -40,21 +41,35 @@ class AppRouter {
       ShellRoute(
         navigatorKey: _shellNavigatorKey,
         builder: (context, state, child) => HomePage(child: child),
+        // Add this property to preserve state
+        restorationScopeId: 'shell',
         routes: [
           // Tasks tab
           GoRoute(
             path: '/tasks',
-            builder: (context, state) => const TasksPage(),
+            pageBuilder:
+                (context, state) => NoTransitionPage(
+                  key: state.pageKey,
+                  restorationId: 'tasks-page',
+                  child: const TasksPage(),
+                ),
             routes: [
               GoRoute(
                 path: 'create',
-                builder: (context, state) => const TaskCreatePage(),
+                pageBuilder:
+                    (context, state) => MaterialPage(
+                      key: state.pageKey,
+                      child: const TaskCreatePage(),
+                    ),
               ),
               GoRoute(
                 path: ':id',
-                builder: (context, state) {
+                pageBuilder: (context, state) {
                   final taskId = state.pathParameters['id']!;
-                  return TaskDetailPage(taskId: taskId);
+                  return MaterialPage(
+                    key: state.pageKey,
+                    child: TaskDetailPage(taskId: taskId),
+                  );
                 },
               ),
             ],
@@ -77,6 +92,8 @@ class AppRouter {
         ),
   );
 
+  // // Getter to expose the observer to the rest of the app
+  // static RouteObserver<PageRoute> get routeObserver => appRouteObserver;
   // Handle authentication redirects
   static Future<String?> _handleRedirect(
     BuildContext context,

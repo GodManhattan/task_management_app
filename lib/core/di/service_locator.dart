@@ -1,5 +1,6 @@
 import 'package:get_it/get_it.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:task_management_app/cubits/auth/cubit/auth_cubit.dart';
 import '../../data/repositories/supabase_auth.repository.dart';
 import '../../data/repositories/supabase_task.repository.dart';
 import '../../data/repositories/supabase_comment.repository.dart';
@@ -25,5 +26,9 @@ Future<void> setupServiceLocator() async {
 
   serviceLocator.registerLazySingleton<CommentRepository>(
     () => SupabaseCommentRepository(serviceLocator()),
+  );
+
+  serviceLocator.registerLazySingleton<AuthCubit>(
+    () => AuthCubit(serviceLocator<AuthRepository>()),
   );
 }

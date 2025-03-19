@@ -1,4 +1,3 @@
-// task_cubit.dart
 import 'package:bloc/bloc.dart';
 import 'package:equatable/equatable.dart';
 import 'package:logger/logger.dart';
@@ -11,14 +10,22 @@ var logger = Logger();
 
 class TaskCubit extends Cubit<TaskState> {
   final TaskRepository _taskRepository;
+  List<Task> _cachedTasks = []; // Cache the tasks
 
   TaskCubit(this._taskRepository) : super(TaskInitial());
 
   // Load all tasks for the current user
-  Future<void> loadTasks() async {
+  Future<void> loadTasks({bool forceRefresh = false}) async {
+    // Don't reload if we already have tasks cached (unless forced)
+    if (_cachedTasks.isNotEmpty && !forceRefresh) {
+      emit(TasksLoaded(_cachedTasks));
+      return;
+    }
+
     emit(TaskLoading());
     try {
       final tasks = await _taskRepository.getTasks();
+      _cachedTasks = tasks; // Cache the tasks
       emit(TasksLoaded(tasks));
     } catch (e) {
       emit(TaskError('Failed to load tasks: ${e.toString()}'));
@@ -31,6 +38,7 @@ class TaskCubit extends Cubit<TaskState> {
     emit(TaskLoading());
     try {
       final tasks = await _taskRepository.getTasksByStatus(status);
+      _cachedTasks = tasks; // Update the cache
       emit(TasksLoaded(tasks));
     } catch (e) {
       emit(TaskError('Failed to load tasks: ${e.toString()}'));
@@ -43,6 +51,7 @@ class TaskCubit extends Cubit<TaskState> {
     emit(TaskLoading());
     try {
       final tasks = await _taskRepository.getTasksByAssignee(userId);
+      _cachedTasks = tasks; // Update the cache
       emit(TasksLoaded(tasks));
     } catch (e) {
       emit(TaskError('Failed to load tasks: ${e.toString()}'));
@@ -55,6 +64,7 @@ class TaskCubit extends Cubit<TaskState> {
     emit(TaskLoading());
     try {
       final tasks = await _taskRepository.searchTasks(query);
+      _cachedTasks = tasks; // Update the cache
       emit(TasksLoaded(tasks));
     } catch (e) {
       emit(TaskError('Failed to search tasks: ${e.toString()}'));
@@ -68,6 +78,12 @@ class TaskCubit extends Cubit<TaskState> {
     try {
       final task = await _taskRepository.getTaskById(id);
       emit(TaskDetailLoaded(task));
+
+      // Update the task in the cache if it exists
+      final index = _cachedTasks.indexWhere((t) => t.id == id);
+      if (index >= 0) {
+        _cachedTasks[index] = task;
+      }
     } catch (e) {
       emit(TaskError('Failed to load task: ${e.toString()}'));
       logger.e('Failed to load task by ID', error: e);
@@ -80,8 +96,10 @@ class TaskCubit extends Cubit<TaskState> {
     try {
       final createdTask = await _taskRepository.createTask(task);
       emit(TaskOperationSuccess('Task created successfully'));
-      // After success, load the newly created task details
-      emit(TaskDetailLoaded(createdTask));
+
+      // Add to cache
+      _cachedTasks = [createdTask, ..._cachedTasks];
+      emit(TasksLoaded(_cachedTasks));
     } catch (e) {
       emit(TaskError('Failed to create task: ${e.toString()}'));
       logger.e('Failed to create task', error: e);
@@ -94,6 +112,13 @@ class TaskCubit extends Cubit<TaskState> {
     try {
       final updatedTask = await _taskRepository.updateTask(task);
       emit(TaskOperationSuccess('Task updated successfully'));
+
+      // Update in cache
+      final index = _cachedTasks.indexWhere((t) => t.id == task.id);
+      if (index >= 0) {
+        _cachedTasks[index] = updatedTask;
+      }
+
       // After success, load the updated task details
       emit(TaskDetailLoaded(updatedTask));
     } catch (e) {
@@ -108,8 +133,10 @@ class TaskCubit extends Cubit<TaskState> {
     try {
       await _taskRepository.deleteTask(id);
       emit(TaskOperationSuccess('Task deleted successfully'));
-      // After success, load all tasks again
-      await loadTasks();
+
+      // Remove from cache
+      _cachedTasks.removeWhere((task) => task.id == id);
+      emit(TasksLoaded(_cachedTasks));
     } catch (e) {
       emit(TaskError('Failed to delete task: ${e.toString()}'));
       logger.e('Failed to delete task', error: e);
@@ -125,11 +152,17 @@ class TaskCubit extends Cubit<TaskState> {
       // Create a new task with updated status
       final updatedTask = task.copyWith(status: newStatus);
       // Update the task
-      await _taskRepository.updateTask(updatedTask);
+      final result = await _taskRepository.updateTask(updatedTask);
+
+      // Update in cache
+      final index = _cachedTasks.indexWhere((t) => t.id == taskId);
+      if (index >= 0) {
+        _cachedTasks[index] = result;
+      }
 
       emit(TaskOperationSuccess('Task status updated successfully'));
       // After success, load the updated task details
-      emit(TaskDetailLoaded(updatedTask));
+      emit(TaskDetailLoaded(result));
     } catch (e) {
       emit(TaskError('Failed to change task status: ${e.toString()}'));
       logger.e('Failed to change task status', error: e);
@@ -145,11 +178,17 @@ class TaskCubit extends Cubit<TaskState> {
       // Create a new task with updated assignee
       final updatedTask = task.copyWith(assigneeId: assigneeId);
       // Update the task
-      await _taskRepository.updateTask(updatedTask);
+      final result = await _taskRepository.updateTask(updatedTask);
+
+      // Update in cache
+      final index = _cachedTasks.indexWhere((t) => t.id == taskId);
+      if (index >= 0) {
+        _cachedTasks[index] = result;
+      }
 
       emit(TaskOperationSuccess('Task assigned successfully'));
       // After success, load the updated task details
-      emit(TaskDetailLoaded(updatedTask));
+      emit(TaskDetailLoaded(result));
     } catch (e) {
       emit(TaskError('Failed to assign task: ${e.toString()}'));
       logger.e('Failed to assign task', error: e);
@@ -160,16 +199,12 @@ class TaskCubit extends Cubit<TaskState> {
   void subscribeToTasks() {
     try {
       _taskRepository.subscribeToTasks().listen((tasks) {
+        _cachedTasks = tasks; // Update the cache with real-time data
         emit(TasksLoaded(tasks));
       });
     } catch (e) {
       logger.e('Failed to subscribe to tasks', error: e);
       // Don't emit error state here as it might disrupt current state
-      //If you still want to notify the user about the failure without
-      //disrupting the state, consider using a separate UI message instead
-      // showSnackbar(
-      //   'Real-time updates are unavailable, but you can still refresh manually.',
-      // );
     }
   }
 }
