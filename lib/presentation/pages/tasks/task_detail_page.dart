@@ -3,6 +3,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import 'package:task_management_app/cubits/auth/cubit/auth_cubit.dart';
+import 'package:task_management_app/cubits/comment/cubit/comment_cubit.dart';
 import 'package:task_management_app/cubits/task/cubit/task_cubit.dart';
 import 'package:task_management_app/cubits/user/cubit/user_cubit.dart';
 import 'package:task_management_app/domain/models/task.model.dart';
@@ -25,6 +26,8 @@ class _TaskDetailPageState extends State<TaskDetailPage> {
     // Load the task on page load
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<TaskCubit>().loadTaskById(widget.taskId);
+      // Load comments for this task
+      context.read<CommentCubit>().getCommentsByTaskId(widget.taskId);
     });
   }
 
@@ -95,8 +98,16 @@ class _TaskDetailPageState extends State<TaskDetailPage> {
       final userId = authState.user.id;
       final content = _commentController.text.trim();
 
-      final updatedTask = task.addComment(userId, content, []);
-      context.read<TaskCubit>().updateTask(updatedTask);
+      // Create a new comment
+      final newComment = Comment.create(
+        taskId: task.id,
+        userId: userId,
+        content: content,
+        attachments: [],
+      );
+
+      // Use CommentCubit to create the comment
+      context.read<CommentCubit>().createComment(newComment);
       _commentController.clear();
     }
   }
@@ -401,70 +412,233 @@ class _TaskDetailPageState extends State<TaskDetailPage> {
   }
 
   Widget _buildCommentsList(Task task) {
-    final comments = task.comments;
-    final userCubit = context.read<UserCubit>();
+    return BlocBuilder<CommentCubit, CommentState>(
+      builder: (context, state) {
+        if (state is CommentLoading) {
+          return const Center(child: CircularProgressIndicator());
+        } else if (state is CommentLoaded) {
+          final comments = state.comment;
 
-    if (comments == null || comments.isEmpty) {
-      return const Card(
-        child: Padding(
-          padding: EdgeInsets.all(16),
-          child: Text('No comments yet'),
-        ),
-      );
-    }
+          if (comments.isEmpty) {
+            return const Card(
+              child: Padding(
+                padding: EdgeInsets.all(16),
+                child: Text('No comments yet'),
+              ),
+            );
+          }
 
-    // Load all user IDs from comments
-    final userIds = comments.map((c) => c.userId).toSet().toList();
-    userCubit.loadUsersByIds(userIds);
+          // Load all user IDs from comments
+          final userCubit = context.read<UserCubit>();
+          final userIds = comments.map((c) => c.userId).toSet().toList();
+          userCubit.loadUsersByIds(userIds);
 
-    return ListView.separated(
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      itemCount: comments.length,
-      separatorBuilder: (_, __) => const Divider(),
-      itemBuilder: (context, index) {
-        final comment = comments[index];
-        return Card(
-          child: Padding(
-            padding: const EdgeInsets.all(12),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    const Icon(Icons.account_circle),
-                    const SizedBox(width: 8),
-                    // Show user's name instead of ID
-                    Text(
-                      userCubit.getDisplayName(comment.userId),
-                      style: const TextStyle(fontWeight: FontWeight.bold),
-                    ),
-                    const Spacer(),
-                    Text(
-                      comment.formattedTimestamp,
-                      style: Theme.of(context).textTheme.bodySmall,
-                    ),
-                    if (comment.isEdited) ...[
-                      const SizedBox(width: 4),
-                      Text(
-                        '(edited)',
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          fontStyle: FontStyle.italic,
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-                const SizedBox(height: 8),
-                Text(comment.content),
-                // Rest of the comment widget...
-              ],
+          return ListView.separated(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            itemCount: comments.length,
+            separatorBuilder: (_, __) => const Divider(),
+            itemBuilder: (context, index) {
+              final comment = comments[index];
+              return _buildCommentItem(context, comment, task);
+            },
+          );
+        } else if (state is CommentError) {
+          return Center(
+            child: Text(
+              state.message,
+              style: const TextStyle(color: Colors.red),
             ),
+          );
+        }
+
+        return const Card(
+          child: Padding(
+            padding: EdgeInsets.all(16),
+            child: Text('Loading comments...'),
           ),
         );
       },
     );
   }
+
+  Widget _buildCommentItem(BuildContext context, Comment comment, Task task) {
+    final authState = context.read<AuthCubit>().state;
+    final userCubit = context.read<UserCubit>();
+    final isTaskOwner =
+        authState is AuthAuthenticated && authState.user.id == task.ownerId;
+    final isCommentOwner =
+        authState is AuthAuthenticated && authState.user.id == comment.userId;
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.account_circle),
+                const SizedBox(width: 8),
+                BlocBuilder<UserCubit, UserState>(
+                  buildWhen: (previous, current) {
+                    return current is UserLoaded &&
+                        current.user.id == comment.userId;
+                  },
+                  builder: (context, state) {
+                    final userName = userCubit.getDisplayName(comment.userId);
+                    return Text(
+                      userName,
+                      style: const TextStyle(fontWeight: FontWeight.bold),
+                    );
+                  },
+                ),
+                const Spacer(),
+                Text(
+                  comment.formattedTimestamp,
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+                if (comment.isEdited) ...[
+                  const SizedBox(width: 4),
+                  Text(
+                    '(edited)',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      fontStyle: FontStyle.italic,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(comment.content),
+            if (comment.attachments.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                children:
+                    comment.attachments
+                        .map(
+                          (attachment) => Chip(
+                            label: Text(attachment),
+                            avatar: const Icon(Icons.attach_file, size: 16),
+                          ),
+                        )
+                        .toList(),
+              ),
+            ],
+            // Show delete option for task owner or comment owner
+            if (isTaskOwner || isCommentOwner) ...[
+              const SizedBox(height: 8),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  // if (isCommentOwner)
+                  //   TextButton.icon(
+                  //     icon: const Icon(Icons.edit, size: 16),
+                  //     label: const Text('Edit'),
+                  //     onPressed: () {
+                  //       // Show edit dialog
+                  //       _showEditCommentDialog(context, comment);
+                  //     },
+                  //   ),
+                  if (isTaskOwner || isCommentOwner)
+                    TextButton.icon(
+                      icon: const Icon(Icons.delete, size: 16),
+                      label: const Text('Delete'),
+                      style: TextButton.styleFrom(foregroundColor: Colors.red),
+                      onPressed: () {
+                        // Show delete confirmation
+                        _showDeleteCommentConfirmation(context, comment, task);
+                      },
+                    ),
+                ],
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  // Add a method to show delete confirmation
+  void _showDeleteCommentConfirmation(
+    BuildContext context,
+    Comment comment,
+    Task task,
+  ) {
+    showDialog(
+      context: context,
+      builder:
+          (context) => AlertDialog(
+            title: const Text('Delete Comment'),
+            content: const Text(
+              'Are you sure you want to delete this comment?',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Cancel'),
+              ),
+              TextButton(
+                onPressed: () {
+                  Navigator.pop(context);
+                  // Use CommentCubit to delete
+                  context.read<CommentCubit>().deleteComment(
+                    comment.id,
+                    task.id,
+                  );
+                },
+                style: TextButton.styleFrom(foregroundColor: Colors.red),
+                child: const Text('Delete'),
+              ),
+            ],
+          ),
+    );
+  }
+
+  // Add a method to show edit dialog
+  // void _showEditCommentDialog(BuildContext context, Comment comment) {
+  //   final TextEditingController controller = TextEditingController(
+  //     text: comment.content,
+  //   );
+
+  //   showDialog(
+  //     context: context,
+  //     builder:
+  //         (context) => AlertDialog(
+  //           title: const Text('Edit Comment'),
+  //           content: TextField(
+  //             controller: controller,
+  //             decoration: const InputDecoration(
+  //               hintText: 'Edit your comment...',
+  //               border: OutlineInputBorder(),
+  //             ),
+  //             minLines: 3,
+  //             maxLines: 5,
+  //           ),
+  //           actions: [
+  //             TextButton(
+  //               onPressed: () => Navigator.pop(context),
+  //               child: const Text('Cancel'),
+  //             ),
+  //             TextButton(
+  //               onPressed: () {
+  //                 if (controller.text.isNotEmpty) {
+  //                   Navigator.pop(context);
+  //                   // Create updated comment
+  //                   final updatedComment = comment.copyWith(
+  //                     content: controller.text.trim(),
+  //                   );
+  //                   // Add method to CommentCubit to update
+  //                   context.read<CommentCubit>().updateComment(updatedComment);
+  //                 }
+  //               },
+  //               child: const Text('Save'),
+  //             ),
+  //           ],
+  //         ),
+  //   );
+  // }
 
   Widget _buildAddCommentSection(Task task) {
     return Card(

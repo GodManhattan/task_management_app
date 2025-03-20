@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:equatable/equatable.dart';
 import 'package:task_management_app/domain/models/comment.model.dart';
 import 'package:uuid/uuid.dart';
@@ -20,7 +22,7 @@ class Task extends Equatable {
   final String ownerId;
   final String? assigneeId;
   final List<String>? tags;
-  final List<Comment>? comments;
+  final List<Comment>? _comments;
 
   /// Constructor
   const Task({
@@ -35,8 +37,11 @@ class Task extends Equatable {
     required this.ownerId,
     this.assigneeId,
     this.tags = const [],
-    this.comments = const [],
-  });
+    List<Comment>? comments,
+  }) : _comments = comments;
+
+  // Getter for comments
+  List<Comment> get comments => _comments ?? const [];
 
   /// Create a new task with default values
   factory Task.create({
@@ -47,7 +52,6 @@ class Task extends Equatable {
     required String ownerId,
     String? assigneeId,
     List<String>? tags = const [],
-    List<Comment>? comments = const [],
   }) {
     final now = DateTime.now();
     return Task(
@@ -62,7 +66,6 @@ class Task extends Equatable {
       ownerId: ownerId,
       assigneeId: assigneeId,
       tags: tags,
-      comments: comments,
     );
   }
 
@@ -81,11 +84,6 @@ class Task extends Equatable {
       ownerId: json['owner_id'],
       assigneeId: json['assignee_id'],
       tags: json['tags'] != null ? List<String>.from(json['tags']) : const [],
-      comments:
-          (json['comments'] as List?)
-              ?.map((c) => Comment.fromJson(c))
-              .toList() ??
-          const [],
     );
   }
 
@@ -103,7 +101,6 @@ class Task extends Equatable {
       'owner_id': ownerId,
       'assignee_id': assigneeId,
       'tags': tags,
-      'comments': comments,
     };
   }
 
@@ -130,7 +127,24 @@ class Task extends Equatable {
       ownerId: ownerId,
       assigneeId: assigneeId ?? this.assigneeId,
       tags: tags ?? this.tags,
-      comments: comments ?? this.comments,
+      comments: comments ?? _comments,
+    );
+  }
+
+  Task withComments(List<Comment> comments) {
+    return Task(
+      id: id,
+      title: title,
+      description: description,
+      status: status,
+      priority: priority,
+      dueDate: dueDate,
+      createdAt: createdAt,
+      updatedAt: updatedAt,
+      ownerId: ownerId,
+      assigneeId: assigneeId,
+      tags: tags,
+      comments: comments,
     );
   }
 

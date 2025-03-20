@@ -15,13 +15,33 @@ class SupabaseTaskRepository implements TaskRepository {
       throw Exception('No authenticated user');
     }
 
-    final data = await _supabaseClient
-        .from('tasks')
-        .select()
-        .or('owner_id.eq.${currentUser.id},assignee_id.eq.${currentUser.id}')
-        .order('created_at', ascending: false);
+    try {
+      final data = await _supabaseClient
+          .from('tasks')
+          .select()
+          .or('owner_id.eq.${currentUser.id},assignee_id.eq.${currentUser.id}')
+          .order('created_at', ascending: false);
 
-    return data.map<Task>((json) => Task.fromJson(json)).toList();
+      print('Raw Supabase response: $data'); // Log the raw response
+
+      if (data is List) {
+        // Make sure each item is a map before using fromJson
+        return data.map<Task>((item) {
+          if (item is Map<String, dynamic>) {
+            return Task.fromJson(item);
+          } else {
+            print('Unexpected item format: $item (${item.runtimeType})');
+            throw Exception('Invalid format for Task in Supabase response');
+          }
+        }).toList();
+      } else {
+        print('Unexpected data format: $data (${data.runtimeType})');
+        throw Exception('Invalid response format from Supabase');
+      }
+    } catch (e) {
+      print('Error in getTasks: $e');
+      rethrow; // Re-throw to be handled by the cubit
+    }
   }
 
   @override
