@@ -1,9 +1,12 @@
 import 'dart:io';
+import 'package:dio/dio.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
+import 'package:open_filex/open_filex.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:task_management_app/cubits/auth/cubit/auth_cubit.dart';
 import 'package:task_management_app/cubits/comment/cubit/comment_cubit.dart';
@@ -12,6 +15,8 @@ import 'package:task_management_app/cubits/user/cubit/user_cubit.dart';
 import 'package:task_management_app/domain/models/task.model.dart';
 import 'package:task_management_app/domain/models/comment.model.dart';
 import 'package:mime/mime.dart';
+import 'package:url_launcher/url_launcher.dart';
+import 'package:path/path.dart' as path;
 
 class TaskDetailPage extends StatefulWidget {
   final String taskId;
@@ -118,6 +123,63 @@ class _TaskDetailPageState extends State<TaskDetailPage> {
             ),
           ),
     );
+  }
+
+  String extractOriginalFileName(String url) {
+    final fileName =
+        url.split('/').last.split('?').first; // Remove query params
+    // Remove timestamp prefix (format: 1234567890_filename.ext)
+    final parts = fileName.split('_');
+    if (parts.length > 1 && parts[0].length > 8) {
+      return parts.sublist(1).join('_');
+    }
+    return fileName;
+  }
+
+  Future<void> _openDocument(String url) async {
+    try {
+      String file = extractOriginalFileName(url);
+      if (file.toLowerCase().endsWith('.pdf')) {
+        // Open the PDF directly in the browser
+        final Uri uri = Uri.parse(url);
+        if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
+          throw Exception('Could not launch $url');
+        }
+      } else {
+        // Handle other file types (download & open)
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Downloading file...')));
+
+        // Extract file name from URL
+        final fileName = extractOriginalFileName(url);
+
+        // Get temporary directory
+        final dir = await getTemporaryDirectory();
+        final filePath = '${dir.path}/$fileName';
+
+        // Download the file using Dio
+        final dio = Dio();
+        await dio.download(url, filePath);
+
+        // Open the file with the default app
+        final result = await OpenFilex.open(filePath);
+        if (result.type != ResultType.done) {
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(SnackBar(content: Text('Error: ${result.message}')));
+        }
+        Future.delayed(const Duration(minutes: 30), () {
+          try {
+            File(filePath).delete();
+          } catch (_) {}
+        });
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Failed to open file: $e')));
+    }
   }
 
   void _addComment(Task task) async {
@@ -572,18 +634,25 @@ class _TaskDetailPageState extends State<TaskDetailPage> {
               children: [
                 const Icon(Icons.account_circle),
                 const SizedBox(width: 8),
-                BlocBuilder<UserCubit, UserState>(
-                  buildWhen: (previous, current) {
-                    return current is UserLoaded &&
-                        current.user.id == comment.userId;
-                  },
-                  builder: (context, state) {
-                    final userName = userCubit.getDisplayName(comment.userId);
-                    return Text(
-                      userName,
-                      style: const TextStyle(fontWeight: FontWeight.bold),
-                    );
-                  },
+                Expanded(
+                  // Prevents overflow
+                  child: BlocBuilder<UserCubit, UserState>(
+                    buildWhen: (previous, current) {
+                      return current is UserLoaded &&
+                          current.user.id == comment.userId;
+                    },
+                    builder: (context, state) {
+                      final userName = userCubit.getDisplayName(comment.userId);
+                      return Text(
+                        userName,
+                        style: const TextStyle(fontWeight: FontWeight.bold),
+                        overflow:
+                            TextOverflow
+                                .ellipsis, // Avoids text breaking layout
+                        maxLines: 1, // Ensures single-line display
+                      );
+                    },
+                  ),
                 ),
                 const Spacer(),
                 Text(
@@ -601,6 +670,7 @@ class _TaskDetailPageState extends State<TaskDetailPage> {
                 ],
               ],
             ),
+
             const SizedBox(height: 8),
             Text(comment.content),
             if (comment.attachments.isNotEmpty) ...[
@@ -610,11 +680,13 @@ class _TaskDetailPageState extends State<TaskDetailPage> {
                 children:
                     comment.attachments.map((attachment) {
                       // Extract just the filename from the URL
-                      final fileName = attachment.split('/').last;
-                      final displayName =
-                          fileName.length > 15
-                              ? '${fileName.substring(0, 12)}...'
-                              : fileName;
+                      final fileName =
+                          attachment.split('/').last.split('?').first;
+                      final displayName = extractOriginalFileName(fileName);
+                      final trimmedName =
+                          displayName.length > 25
+                              ? '${displayName.substring(0, 20)}...'
+                              : displayName;
 
                       bool isImageFile(String url) {
                         final mimeType = lookupMimeType(
@@ -718,17 +790,14 @@ class _TaskDetailPageState extends State<TaskDetailPage> {
                                   ),
                             );
                           } else {
-                            // For non-image files, you could implement opening the file
-                            // or copying the URL to clipboard
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(content: Text('File URL: $attachment')),
-                            );
+                            // Open document with url_launcher
+                            _openDocument(attachment);
                           }
                         },
                         child: Chip(
-                          label: Text(displayName),
+                          label: Text(trimmedName),
                           avatar: Icon(
-                            isImage ? Icons.image : Icons.attach_file,
+                            isImage ? Icons.image : getFileTypeIcon(fileName),
                             size: 16,
                           ),
                         ),
@@ -1008,6 +1077,27 @@ class _TaskDetailPageState extends State<TaskDetailPage> {
         return Colors.red.shade100;
       default:
         return Colors.grey.shade300;
+    }
+  }
+
+  IconData getFileTypeIcon(String fileName) {
+    final extension = fileName.split('.').last.toLowerCase();
+    switch (extension) {
+      case 'pdf':
+        return Icons.picture_as_pdf;
+      case 'doc':
+      case 'docx':
+        return Icons.description;
+      case 'xls':
+      case 'xlsx':
+        return Icons.table_chart;
+      case 'ppt':
+      case 'pptx':
+        return Icons.slideshow;
+      case 'txt':
+        return Icons.article;
+      default:
+        return Icons.insert_drive_file;
     }
   }
 

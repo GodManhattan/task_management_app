@@ -139,8 +139,18 @@ class SupabaseTaskRepository implements TaskRepository {
 
     return _supabaseClient
         .from('tasks')
-        .stream(primaryKey: ['id'])
-        .eq('owner_id', currentUser.id)
-        .map((data) => data.map<Task>((json) => Task.fromJson(json)).toList());
+        .stream(primaryKey: ['id']) // Get real-time updates for all tasks
+        .map((data) {
+          return data
+              .map<Task>(
+                (json) => Task.fromJson(json),
+              ) // Convert JSON to Task objects
+              .where(
+                (task) =>
+                    task.ownerId == currentUser.id ||
+                    task.assigneeId == currentUser.id,
+              ) // Filter manually
+              .toList();
+        });
   }
 }

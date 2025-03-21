@@ -130,16 +130,20 @@ class TaskCubit extends Cubit<TaskState> {
   // Delete a task
   Future<void> deleteTask(String id) async {
     emit(TaskLoading());
+    // Store current tasks state for rollback
+    final previousTasks = List<Task>.from(_cachedTasks);
+    // Optimistically update UI
+    _cachedTasks.removeWhere((task) => task.id == id);
+    emit(TasksLoaded(_cachedTasks));
     try {
       await _taskRepository.deleteTask(id);
       emit(TaskOperationSuccess('Task deleted successfully'));
-
-      // Remove from cache
-      _cachedTasks.removeWhere((task) => task.id == id);
       emit(TasksLoaded(_cachedTasks));
     } catch (e) {
+      // Restore previous state on error
       emit(TaskError('Failed to delete task: ${e.toString()}'));
-      logger.e('Failed to delete task', error: e);
+      _cachedTasks = previousTasks;
+      emit(TasksLoaded(_cachedTasks));
     }
   }
 

@@ -111,7 +111,7 @@ class AuthCubit extends Cubit<AuthState> {
       // Forzar la actualización de la sesión en Supabase
       await _authRepository.refreshSession();
 
-      final user = _authRepository.getCurrentUser();
+      final user = await _authRepository.getCurrentUser();
       if (user != null) {
         emit(AuthAuthenticated(user as usermodel.User));
       } else {
@@ -130,7 +130,7 @@ class AuthCubit extends Cubit<AuthState> {
         emit(AuthUnauthenticated());
         return;
       }
-      final user = _authRepository.getCurrentUser();
+      final user = await _authRepository.getCurrentUser();
       if (user != null) {
         emit(AuthAuthenticated(user as usermodel.User));
       } else {
