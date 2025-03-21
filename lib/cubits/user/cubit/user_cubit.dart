@@ -76,4 +76,8 @@ class UserCubit extends Cubit<UserState> {
 
     return user.fullName ?? user.email;
   }
+
+  bool isUserLoaded(String userId) {
+    return state is UserLoaded && (state as UserLoaded).user.id == userId;
+  }
 }

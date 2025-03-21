@@ -1,13 +1,17 @@
+import 'dart:io';
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:task_management_app/cubits/auth/cubit/auth_cubit.dart';
 import 'package:task_management_app/cubits/comment/cubit/comment_cubit.dart';
 import 'package:task_management_app/cubits/task/cubit/task_cubit.dart';
 import 'package:task_management_app/cubits/user/cubit/user_cubit.dart';
 import 'package:task_management_app/domain/models/task.model.dart';
 import 'package:task_management_app/domain/models/comment.model.dart';
+import 'package:mime/mime.dart';
 
 class TaskDetailPage extends StatefulWidget {
   final String taskId;
@@ -19,7 +23,10 @@ class TaskDetailPage extends StatefulWidget {
 
 class _TaskDetailPageState extends State<TaskDetailPage> {
   final _commentController = TextEditingController();
-
+  List<File> _selectedFiles = [];
+  bool _isUploading = false;
+  Task? _loadedTask;
+  bool _hasInitiallyLoaded = false;
   @override
   void initState() {
     super.initState();
@@ -28,6 +35,7 @@ class _TaskDetailPageState extends State<TaskDetailPage> {
       context.read<TaskCubit>().loadTaskById(widget.taskId);
       // Load comments for this task
       context.read<CommentCubit>().getCommentsByTaskId(widget.taskId);
+      _loadTaskAndComments();
     });
   }
 
@@ -35,6 +43,25 @@ class _TaskDetailPageState extends State<TaskDetailPage> {
   void dispose() {
     _commentController.dispose();
     super.dispose();
+  }
+
+  // handle reloading after returning from file picker
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // If the task is not loaded, try to reload it
+    final state = context.read<TaskCubit>().state;
+    if (!_hasInitiallyLoaded &&
+        (state is! TaskDetailLoaded || _loadedTask == null)) {
+      _loadTaskAndComments();
+    }
+  }
+
+  void _loadTaskAndComments() {
+    if (mounted) {
+      context.read<TaskCubit>().loadTaskById(widget.taskId);
+      context.read<CommentCubit>().getCommentsByTaskId(widget.taskId);
+    }
   }
 
   void _showDeleteConfirmation(BuildContext context, Task task) {
@@ -52,8 +79,9 @@ class _TaskDetailPageState extends State<TaskDetailPage> {
               TextButton(
                 onPressed: () {
                   Navigator.pop(context);
-                  context.read<TaskCubit>().deleteTask(task.id);
-                  context.go('/tasks'); // Navigate back after deletion
+                  context.read<TaskCubit>().deleteTask(task.id).then((_) {
+                    context.go('/tasks'); // Navigate back after deletion
+                  });
                 },
                 style: TextButton.styleFrom(foregroundColor: Colors.red),
                 child: const Text('Delete'),
@@ -92,23 +120,72 @@ class _TaskDetailPageState extends State<TaskDetailPage> {
     );
   }
 
-  void _addComment(Task task) {
+  void _addComment(Task task) async {
     final authState = context.read<AuthCubit>().state;
-    if (authState is AuthAuthenticated && _commentController.text.isNotEmpty) {
+    final content = _commentController.text.trim();
+    if (authState is AuthAuthenticated &&
+        (content.isNotEmpty || _selectedFiles.isNotEmpty)) {
       final userId = authState.user.id;
       final content = _commentController.text.trim();
 
-      // Create a new comment
-      final newComment = Comment.create(
-        taskId: task.id,
-        userId: userId,
-        content: content,
-        attachments: [],
-      );
+      // Show loading indicator
+      setState(() {
+        _isUploading = true;
+      });
 
-      // Use CommentCubit to create the comment
-      context.read<CommentCubit>().createComment(newComment);
-      _commentController.clear();
+      try {
+        // Upload files and get URLs
+        List<String> attachmentUrls = [];
+
+        for (File file in _selectedFiles) {
+          final originalFileName = file.path.split('/').last;
+          final timestamp = DateTime.now().millisecondsSinceEpoch;
+          final filePath = 'images/${timestamp}_$originalFileName';
+
+          final fileBytes = await file.readAsBytes();
+          // Upload to Supabase Storage
+          await Supabase.instance.client.storage
+              .from('attachments')
+              .uploadBinary(filePath, fileBytes);
+
+          // Get signed URL with expiration (e.g., 1 week)
+          final signedUrl = await Supabase.instance.client.storage
+              .from('attachments')
+              .createSignedUrl(filePath, 60 * 60 * 24 * 7); // 7 days in seconds
+
+          print("Generated signed URL: $signedUrl");
+          attachmentUrls.add(signedUrl);
+        }
+
+        // Create a new comment with attachments
+        final newComment = Comment.create(
+          taskId: task.id,
+          userId: userId,
+          content: content,
+          attachments: attachmentUrls,
+        );
+
+        // Use CommentCubit to create the comment
+        context.read<CommentCubit>().createComment(newComment);
+
+        // Clear form
+        _commentController.clear();
+        setState(() {
+          _selectedFiles = [];
+          _isUploading = false;
+        });
+      } catch (e) {
+        // Show error
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to upload attachments: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+        setState(() {
+          _isUploading = false;
+        });
+      }
     }
   }
 
@@ -130,10 +207,6 @@ class _TaskDetailPageState extends State<TaskDetailPage> {
                   return Row(
                     children: [
                       IconButton(
-                        icon: const Icon(Icons.edit),
-                        onPressed: () => context.go('/tasks/${task.id}/edit'),
-                      ),
-                      IconButton(
                         icon: const Icon(Icons.delete),
                         onPressed: () => _showDeleteConfirmation(context, task),
                       ),
@@ -146,8 +219,15 @@ class _TaskDetailPageState extends State<TaskDetailPage> {
           ),
         ],
       ),
-      body: BlocListener<TaskCubit, TaskState>(
+      body: BlocConsumer<TaskCubit, TaskState>(
         listener: (context, state) {
+          if (state is TaskDetailLoaded) {
+            // Store the loaded task for backup
+            _loadedTask = state.task;
+            _hasInitiallyLoaded = true;
+          }
+
+          // Existing listener code
           if (state is TaskOperationSuccess) {
             ScaffoldMessenger.of(
               context,
@@ -161,24 +241,31 @@ class _TaskDetailPageState extends State<TaskDetailPage> {
             );
           }
         },
-        child: BlocBuilder<TaskCubit, TaskState>(
-          builder: (context, state) {
-            if (state is TaskLoading) {
-              return const Center(child: CircularProgressIndicator());
-            } else if (state is TaskError) {
-              return Center(
-                child: Text(
-                  state.message,
-                  style: const TextStyle(color: Colors.red),
-                ),
-              );
-            } else if (state is TaskDetailLoaded) {
-              final task = state.task;
-              return _buildTaskDetail(context, task);
-            }
-            return const Center(child: Text('Task not found'));
-          },
-        ),
+        builder: (context, state) {
+          if (state is TaskLoading && !_hasInitiallyLoaded) {
+            return const Center(child: CircularProgressIndicator());
+          } else if (state is TaskDetailLoaded) {
+            _loadedTask = state.task; // Keep the cached task updated
+            return _buildTaskDetail(context, state.task);
+          } else if (_loadedTask != null) {
+            // Use the cached task if available
+            return _buildTaskDetail(context, _loadedTask!);
+          } else if (state is TaskError) {
+            return Center(
+              child: Text(
+                state.message,
+                style: const TextStyle(color: Colors.red),
+              ),
+            );
+          }
+
+          // If we get here, reload the task
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            _loadTaskAndComments();
+          });
+
+          return const Center(child: CircularProgressIndicator());
+        },
       ),
     );
   }
@@ -323,10 +410,12 @@ class _TaskDetailPageState extends State<TaskDetailPage> {
         authState is AuthAuthenticated && authState.user.id == task.ownerId;
 
     final userCubit = context.read<UserCubit>();
-
     // Load user data for owner and assignee
     userCubit.loadUserById(task.ownerId);
-    if (task.assigneeId != null) {
+    if (!userCubit.isUserLoaded(task.ownerId)) {
+      userCubit.loadUserById(task.ownerId);
+    }
+    if (task.assigneeId != null && !userCubit.isUserLoaded(task.assigneeId!)) {
       userCubit.loadUserById(task.assigneeId!);
     }
 
@@ -431,7 +520,10 @@ class _TaskDetailPageState extends State<TaskDetailPage> {
           // Load all user IDs from comments
           final userCubit = context.read<UserCubit>();
           final userIds = comments.map((c) => c.userId).toSet().toList();
-          userCubit.loadUsersByIds(userIds);
+
+          if (userIds.isNotEmpty) {
+            userCubit.loadUsersByIds(userIds);
+          }
 
           return ListView.separated(
             shrinkWrap: true,
@@ -516,14 +608,132 @@ class _TaskDetailPageState extends State<TaskDetailPage> {
               Wrap(
                 spacing: 8,
                 children:
-                    comment.attachments
-                        .map(
-                          (attachment) => Chip(
-                            label: Text(attachment),
-                            avatar: const Icon(Icons.attach_file, size: 16),
+                    comment.attachments.map((attachment) {
+                      // Extract just the filename from the URL
+                      final fileName = attachment.split('/').last;
+                      final displayName =
+                          fileName.length > 15
+                              ? '${fileName.substring(0, 12)}...'
+                              : fileName;
+
+                      bool isImageFile(String url) {
+                        final mimeType = lookupMimeType(
+                          url.split('?').first,
+                        ); // Ignore query params
+                        return mimeType != null &&
+                            mimeType.startsWith('image/');
+                      }
+
+                      // Check if it's an image file
+                      final isImage =
+                          fileName.toLowerCase().endsWith('.jpg') ||
+                          fileName.toLowerCase().endsWith('.jpeg') ||
+                          fileName.toLowerCase().endsWith('.png') ||
+                          fileName.toLowerCase().endsWith('.gif');
+
+                      return InkWell(
+                        onTap: () {
+                          if (isImageFile(attachment)) {
+                            // Show image dialog if it's an image
+                            showDialog(
+                              context: context,
+                              builder:
+                                  (context) => Dialog(
+                                    child: Column(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        AppBar(
+                                          title: Text(fileName),
+                                          automaticallyImplyLeading: false,
+                                          actions: [
+                                            IconButton(
+                                              icon: const Icon(Icons.close),
+                                              onPressed:
+                                                  () => Navigator.pop(context),
+                                            ),
+                                          ],
+                                        ),
+                                        Flexible(
+                                          child: Padding(
+                                            padding: const EdgeInsets.all(8.0),
+                                            child: Image.network(
+                                              attachment,
+                                              fit: BoxFit.contain,
+                                              loadingBuilder: (
+                                                context,
+                                                child,
+                                                loadingProgress,
+                                              ) {
+                                                if (loadingProgress == null)
+                                                  return child;
+                                                return Center(
+                                                  child: CircularProgressIndicator(
+                                                    value:
+                                                        loadingProgress
+                                                                    .expectedTotalBytes !=
+                                                                null
+                                                            ? loadingProgress
+                                                                    .cumulativeBytesLoaded /
+                                                                loadingProgress
+                                                                    .expectedTotalBytes!
+                                                            : null,
+                                                  ),
+                                                );
+                                              },
+                                              errorBuilder: (
+                                                context,
+                                                error,
+                                                stackTrace,
+                                              ) {
+                                                print(
+                                                  "Image error: $error for URL: $attachment",
+                                                );
+                                                return Padding(
+                                                  padding: const EdgeInsets.all(
+                                                    16.0,
+                                                  ),
+                                                  child: Column(
+                                                    children: [
+                                                      Icon(
+                                                        Icons.broken_image,
+                                                        size: 64,
+                                                        color: Colors.red,
+                                                      ),
+                                                      Text(
+                                                        'Failed to load image',
+                                                      ),
+                                                      SizedBox(height: 8),
+                                                      SelectableText(
+                                                        attachment,
+                                                      ), // Allow copying URL
+                                                    ],
+                                                  ),
+                                                );
+                                              },
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                            );
+                          } else {
+                            // For non-image files, you could implement opening the file
+                            // or copying the URL to clipboard
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text('File URL: $attachment')),
+                            );
+                          }
+                        },
+                        child: Chip(
+                          label: Text(displayName),
+                          avatar: Icon(
+                            isImage ? Icons.image : Icons.attach_file,
+                            size: 16,
                           ),
-                        )
-                        .toList(),
+                        ),
+                      );
+                    }).toList(),
               ),
             ],
             // Show delete option for task owner or comment owner
@@ -661,24 +871,83 @@ class _TaskDetailPageState extends State<TaskDetailPage> {
               minLines: 2,
               maxLines: 5,
             ),
+
+            // Display selected files preview
+            if (_selectedFiles.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Text('Selected files (${_selectedFiles.length})'),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children:
+                    _selectedFiles.map((file) {
+                      final fileName = file.path.split('/').last;
+                      return Chip(
+                        label: Text(
+                          fileName.length > 15
+                              ? '${fileName.substring(0, 15)}...'
+                              : fileName,
+                        ),
+                        avatar: const Icon(Icons.attach_file, size: 16),
+                        deleteIcon: const Icon(Icons.close, size: 16),
+                        onDeleted: () {
+                          setState(() {
+                            _selectedFiles.remove(file);
+                          });
+                        },
+                      );
+                    }).toList(),
+              ),
+            ],
+
             const SizedBox(height: 8),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.end,
-              children: [
-                TextButton.icon(
-                  icon: const Icon(Icons.add_photo_alternate),
-                  label: const Text('Add Attachment'),
-                  onPressed: () {
-                    // Implement attachment functionality
-                    // This would typically show a file picker
-                  },
-                ),
-                const SizedBox(width: 8),
-                ElevatedButton(
-                  onPressed: () => _addComment(task),
-                  child: const Text('Post Comment'),
-                ),
-              ],
+            // Separate buttons into two rows
+            Align(
+              alignment: Alignment.centerRight,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  TextButton.icon(
+                    icon: const Icon(Icons.add_photo_alternate),
+                    label: const Text('Add Attachment'),
+                    onPressed: () async {
+                      // Show file picker
+                      FilePickerResult? result = await FilePicker.platform
+                          .pickFiles(
+                            type: FileType.any,
+                            allowMultiple: true,
+                            // This might help with navigation issues
+                            lockParentWindow: true,
+                          );
+
+                      // Only update state if the widget is still mounted
+                      if (result != null && mounted) {
+                        List<File> files =
+                            result.paths
+                                .where((path) => path != null)
+                                .map((path) => File(path!))
+                                .toList();
+
+                        setState(() {
+                          _selectedFiles = files;
+                        });
+                      }
+                    },
+                  ),
+                  const SizedBox(height: 8),
+                  ElevatedButton(
+                    onPressed: _isUploading ? null : () => _addComment(task),
+                    child:
+                        _isUploading
+                            ? const SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                            : const Text('Post Comment'),
+                  ),
+                ],
+              ),
             ),
           ],
         ),
