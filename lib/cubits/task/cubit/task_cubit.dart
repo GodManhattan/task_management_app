@@ -211,4 +211,68 @@ class TaskCubit extends Cubit<TaskState> {
       // Don't emit error state here as it might disrupt current state
     }
   }
+  // Load history tasks (completed and cancelled)
+  Future<void> loadTasksHistory({bool forceRefresh = false}) async {
+    // Don't reload if we already have tasks cached (unless forced)
+    if (_cachedTasks.isNotEmpty && !forceRefresh) {
+      final historyTasks =
+          _cachedTasks
+              .where(
+                (task) =>
+                    task.status == TaskStatus.completed ||
+                    task.status == TaskStatus.canceled,
+              )
+              .toList();
+      emit(TasksLoaded(historyTasks));
+      return;
+    }
+
+    emit(TaskLoading());
+    try {
+      // First, load all tasks
+      final allTasks = await _taskRepository.getTasks();
+      _cachedTasks = allTasks; // Update the cache
+
+      // Filter for completed and canceled tasks
+      final historyTasks =
+          allTasks
+              .where(
+                (task) =>
+                    task.status == TaskStatus.completed ||
+                    task.status == TaskStatus.canceled,
+              )
+              .toList();
+
+      emit(TasksLoaded(historyTasks));
+    } catch (e) {
+      emit(TaskError('Failed to load task history: ${e.toString()}'));
+      logger.e('Failed to load task history', error: e);
+    }
+  }
+
+  // Load tasks by completion date (most recent first)
+  Future<void> loadTasksByCompletionDate() async {
+    emit(TaskLoading());
+    try {
+      // Get all tasks
+      final tasks = await _taskRepository.getTasks();
+      _cachedTasks = tasks; // Update the cache
+
+      // Filter history tasks and sort by updated_at (completion date)
+      final historyTasks =
+          tasks
+              .where(
+                (task) =>
+                    task.status == TaskStatus.completed ||
+                    task.status == TaskStatus.canceled,
+              )
+              .toList()
+            ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+
+      emit(TasksLoaded(historyTasks));
+    } catch (e) {
+      emit(TaskError('Failed to load task history: ${e.toString()}'));
+      logger.e('Failed to load tasks by completion date', error: e);
+    }
+  }
 }

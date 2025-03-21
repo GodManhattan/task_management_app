@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:task_management_app/core/routing/global_route_observer.dart';
 import 'package:task_management_app/presentation/pages/home/team_page.dart';
+import 'package:task_management_app/presentation/pages/tasks/task_history.page.dart';
 import '../../presentation/pages/auth/login_page.dart';
 import '../../presentation/pages/auth/register_page.dart';
 import '../../presentation/pages/auth/forgot_password_page.dart';
@@ -74,7 +75,15 @@ class AppRouter {
               ),
             ],
           ),
-
+          GoRoute(
+            path: '/history',
+            pageBuilder:
+                (context, state) => NoTransitionPage(
+                  key: state.pageKey,
+                  restorationId: 'history-page',
+                  child: const TaskHistoryPage(),
+                ),
+          ),
           // Team tab
           GoRoute(path: '/team', builder: (context, state) => const TeamPage()),
 

@@ -41,4 +41,7 @@ extension GoRouterNavigation on BuildContext {
 
   /// Sign out and navigate to login
   void signOut() => GoRouter.of(this).go('/login');
+
+  /// Navigate to history
+  void goToHistory() => GoRouter.of(this).go('/history');
 }
