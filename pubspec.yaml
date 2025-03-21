@@ -16,6 +16,7 @@ dependencies:
   flutter:
     sdk: flutter
   flutter_bloc: ^9.1.0
+  flutter_dotenv: ^5.2.1
   flutter_native_splash: ^2.4.5
   flutter_secure_storage: ^9.2.4
   get_it: ^8.0.3
@@ -24,12 +25,12 @@ dependencies:
   logger: ^2.5.0
   lottie: ^3.3.1
   mime: ^2.0.0
-  open_filex:
+  open_filex: null
+  path: null
   path_provider: ^2.1.5
   supabase_flutter: ^2.8.4
   url_launcher: ^6.3.1
   uuid: ^4.5.1
-  path:
 
 dev_dependencies:
   bloc_test: ^10.0.0
@@ -44,6 +45,7 @@ dev_dependencies:
 flutter:
   uses-material-design: true
   assets:
+    - .env
     - assets/
     - assets/To-do splash.json
     - assets/to-do-high-resolution-logo-transparent.png

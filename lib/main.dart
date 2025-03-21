@@ -1,17 +1,18 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:task_management_app/core/di/service_locator.dart';
 import 'package:task_management_app/core/routing/app_router.dart';
-import 'package:task_management_app/core/routing/navigation_helpers.dart';
+
 import 'package:task_management_app/cubits/auth/cubit/auth_cubit.dart'
     as authCubit;
 import 'package:task_management_app/cubits/auth/cubit/auth_cubit.dart';
 import 'package:task_management_app/cubits/comment/cubit/comment_cubit.dart';
 import 'package:task_management_app/cubits/task/cubit/task_cubit.dart';
 import 'package:task_management_app/cubits/user/cubit/user_cubit.dart';
-import 'package:task_management_app/data/repositories/supabase_task.repository.dart';
+
 import 'package:task_management_app/data/secure_local_storage.dart';
 import 'package:task_management_app/domain/repositories/auth.repository.dart';
 import 'package:task_management_app/domain/repositories/task.repository.dart';
@@ -19,16 +20,18 @@ import 'package:task_management_app/handlers/handlers.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_native_splash/flutter_native_splash.dart';
 import 'package:task_management_app/presentation/pages/error/error_page.dart';
+import 'package:task_management_app/core/config/app_config.dart';
 
 void main() async {
   WidgetsBinding widgetsBinding = WidgetsFlutterBinding.ensureInitialized();
   FlutterNativeSplash.preserve(widgetsBinding: widgetsBinding);
   try {
+    // First load environment variables
+    await dotenv.load(fileName: ".env");
     // Initialize Supabase
     await Supabase.initialize(
-      url: 'https://chwswwssmegejiknagqz.supabase.co',
-      anonKey:
-          'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNod3N3d3NzbWVnZWppa25hZ3F6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDE1NTAyOTQsImV4cCI6MjA1NzEyNjI5NH0.SByMYeavX2FLcseCL9xWv8nZkdKednpsYnEYrNVqI00',
+      url: AppConfig.supabaseUrl,
+      anonKey: AppConfig.supabaseAnonKey,
       authOptions: FlutterAuthClientOptions(
         localStorage:
             SecureLocalStorage(), // Custom secure storage implementation
