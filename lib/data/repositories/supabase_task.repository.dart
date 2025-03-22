@@ -17,39 +17,87 @@ class SupabaseTaskRepository implements TaskRepository {
 
     try {
       final data = await _supabaseClient
-          .from('tasks')
+          .from('tasks') // Only active tasks table
           .select()
           .or('owner_id.eq.${currentUser.id},assignee_id.eq.${currentUser.id}')
           .order('created_at', ascending: false);
 
-      print('Raw Supabase response: $data'); // Log the raw response
-
       if (data is List) {
-        // Make sure each item is a map before using fromJson
         return data.map<Task>((item) {
           if (item is Map<String, dynamic>) {
             return Task.fromJson(item);
           } else {
-            print('Unexpected item format: $item (${item.runtimeType})');
             throw Exception('Invalid format for Task in Supabase response');
           }
         }).toList();
       } else {
-        print('Unexpected data format: $data (${data.runtimeType})');
         throw Exception('Invalid response format from Supabase');
       }
     } catch (e) {
       print('Error in getTasks: $e');
-      rethrow; // Re-throw to be handled by the cubit
+      rethrow;
+    }
+  }
+
+  @override
+  Future<List<Task>> getTasksHistory() async {
+    final currentUser = _supabaseClient.auth.currentUser;
+
+    if (currentUser == null) {
+      throw Exception('No authenticated user');
+    }
+
+    try {
+      final data = await _supabaseClient
+          .from('task_history') // History table
+          .select()
+          .or('owner_id.eq.${currentUser.id},assignee_id.eq.${currentUser.id}')
+          .order('completed_at', ascending: false);
+
+      if (data is List) {
+        return data.map<Task>((item) {
+          if (item is Map<String, dynamic>) {
+            return Task.fromJson(item);
+          } else {
+            throw Exception('Invalid format for Task in Supabase response');
+          }
+        }).toList();
+      } else {
+        throw Exception('Invalid response format from Supabase');
+      }
+    } catch (e) {
+      print('Error in getTasksHistory: $e');
+      rethrow;
     }
   }
 
   @override
   Future<Task> getTaskById(String id) async {
-    final data =
-        await _supabaseClient.from('tasks').select().eq('id', id).single();
+    // First try to find in active tasks
+    try {
+      final data =
+          await _supabaseClient
+              .from('tasks')
+              .select()
+              .eq('id', id)
+              .maybeSingle();
 
-    return Task.fromJson(data);
+      if (data != null) {
+        return Task.fromJson(data);
+      }
+
+      // If not found in active tasks, try history
+      final historyData =
+          await _supabaseClient
+              .from('task_history')
+              .select()
+              .eq('id', id)
+              .single();
+      return Task.fromJson(historyData);
+    } catch (e) {
+      print('Error in getTaskById: $e');
+      rethrow;
+    }
   }
 
   @override
@@ -79,7 +127,13 @@ class SupabaseTaskRepository implements TaskRepository {
 
   @override
   Future<void> deleteTask(String id) async {
-    await _supabaseClient.from('tasks').delete().eq('id', id);
+    // First try to delete from active tasks
+    try {
+      await _supabaseClient.from('tasks').delete().eq('id', id);
+    } catch (e) {
+      // If not found in active tasks, try history
+      await _supabaseClient.from('task_history').delete().eq('id', id);
+    }
   }
 
   @override
@@ -90,25 +144,44 @@ class SupabaseTaskRepository implements TaskRepository {
       throw Exception('No authenticated user');
     }
 
+    // Determine which table to query based on status
+    final table =
+        (status == TaskStatus.completed || status == TaskStatus.canceled)
+            ? 'task_history'
+            : 'tasks';
+
     final data = await _supabaseClient
-        .from('tasks')
+        .from(table)
         .select()
         .or('owner_id.eq.${currentUser.id},assignee_id.eq.${currentUser.id}')
         .eq('status', status.name)
-        .order('created_at', ascending: false);
+        .order(
+          table == 'task_history' ? 'completed_at' : 'created_at',
+          ascending: false,
+        );
 
     return data.map<Task>((json) => Task.fromJson(json)).toList();
   }
 
   @override
   Future<List<Task>> getTasksByAssignee(String userId) async {
-    final data = await _supabaseClient
+    // First get active tasks assigned to user
+    final activeTasks = await _supabaseClient
         .from('tasks')
         .select()
         .eq('assignee_id', userId)
         .order('created_at', ascending: false);
 
-    return data.map<Task>((json) => Task.fromJson(json)).toList();
+    // Then get history tasks assigned to user
+    final historyTasks = await _supabaseClient
+        .from('task_history')
+        .select()
+        .eq('assignee_id', userId)
+        .order('completed_at', ascending: false);
+
+    // Combine and convert both
+    final allTasks = [...activeTasks, ...historyTasks];
+    return allTasks.map<Task>((json) => Task.fromJson(json)).toList();
   }
 
   @override
@@ -119,14 +192,25 @@ class SupabaseTaskRepository implements TaskRepository {
       throw Exception('No authenticated user');
     }
 
-    final data = await _supabaseClient
+    // Search active tasks
+    final activeTasks = await _supabaseClient
         .from('tasks')
         .select()
         .or('owner_id.eq.${currentUser.id},assignee_id.eq.${currentUser.id}')
         .or('title.ilike.%$query%,description.ilike.%$query%')
         .order('created_at', ascending: false);
 
-    return data.map<Task>((json) => Task.fromJson(json)).toList();
+    // Search history tasks
+    final historyTasks = await _supabaseClient
+        .from('task_history')
+        .select()
+        .or('owner_id.eq.${currentUser.id},assignee_id.eq.${currentUser.id}')
+        .or('title.ilike.%$query%,description.ilike.%$query%')
+        .order('completed_at', ascending: false);
+
+    // Combine results
+    final allTasks = [...activeTasks, ...historyTasks];
+    return allTasks.map<Task>((json) => Task.fromJson(json)).toList();
   }
 
   @override
@@ -139,18 +223,23 @@ class SupabaseTaskRepository implements TaskRepository {
 
     return _supabaseClient
         .from('tasks')
-        .stream(primaryKey: ['id']) // Get real-time updates for all tasks
-        .map((data) {
-          return data
-              .map<Task>(
-                (json) => Task.fromJson(json),
-              ) // Convert JSON to Task objects
-              .where(
-                (task) =>
-                    task.ownerId == currentUser.id ||
-                    task.assigneeId == currentUser.id,
-              ) // Filter manually
-              .toList();
-        });
+        .stream(primaryKey: ['id'])
+        .eq('owner_id', currentUser.id)
+        .map((data) => data.map<Task>((json) => Task.fromJson(json)).toList());
+  }
+
+  @override
+  Stream<List<Task>> subscribeToTaskHistory() {
+    final currentUser = _supabaseClient.auth.currentUser;
+
+    if (currentUser == null) {
+      throw Exception('No authenticated user');
+    }
+
+    return _supabaseClient
+        .from('task_history')
+        .stream(primaryKey: ['id'])
+        .eq('owner_id', currentUser.id)
+        .map((data) => data.map<Task>((json) => Task.fromJson(json)).toList());
   }
 }

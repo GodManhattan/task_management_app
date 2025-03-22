@@ -13,17 +13,50 @@ class TaskHistoryPage extends StatefulWidget {
 }
 
 class _TaskHistoryPageState extends State<TaskHistoryPage> {
-  final List<TaskStatus> _historyStatuses = [
-    TaskStatus.completed,
-    TaskStatus.canceled,
-  ];
+  // Local cache of tasks to prevent UI flashing
+  List<Task> _displayedTasks = [];
+  bool _isLoading = true;
+  String? _errorMessage;
 
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<TaskCubit>().loadTasksHistory();
+    // Load history tasks once
+    _loadHistoryData();
+  }
+
+  Future<void> _loadHistoryData() async {
+    if (!mounted) return;
+
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
     });
+
+    try {
+      // Load tasks directly from repository via cubit
+      final taskCubit = context.read<TaskCubit>();
+      await taskCubit.loadTasksHistory();
+
+      if (!mounted) return;
+
+      setState(() {
+        // Maintain local state for UI stability
+        final state = taskCubit.state;
+        if (state is TasksLoaded && state.isHistoryView) {
+          _displayedTasks = state.tasks;
+        } else {
+          _displayedTasks = taskCubit.getHistoryTasks();
+        }
+        _isLoading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _errorMessage = 'Failed to load history: $e';
+        _isLoading = false;
+      });
+    }
   }
 
   @override
@@ -36,42 +69,59 @@ class _TaskHistoryPageState extends State<TaskHistoryPage> {
             icon: const Icon(Icons.filter_list),
             onPressed: () => _showFilterDialog(context),
           ),
+          IconButton(
+            icon: const Icon(Icons.refresh),
+            onPressed: _loadHistoryData,
+            tooltip: 'Refresh',
+          ),
         ],
       ),
-      body: BlocBuilder<TaskCubit, TaskState>(
-        builder: (context, state) {
-          if (state is TaskLoading) {
-            return const Center(child: CircularProgressIndicator());
-          } else if (state is TasksLoaded) {
-            final historyTasks =
-                state.tasks
-                    .where((task) => _historyStatuses.contains(task.status))
-                    .toList();
+      body:
+          _isLoading
+              ? const Center(child: CircularProgressIndicator())
+              : _errorMessage != null
+              ? _buildErrorState(_errorMessage!)
+              : _displayedTasks.isEmpty
+              ? _buildEmptyState()
+              : _buildHistoryList(_displayedTasks),
+    );
+  }
 
-            return historyTasks.isEmpty
-                ? _buildEmptyState()
-                : _buildHistoryList(historyTasks);
-          }
-          return const Center(child: Text('No history available'));
-        },
+  Widget _buildErrorState(String message) {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Text(
+            message,
+            style: const TextStyle(color: Colors.red),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 16),
+          ElevatedButton(
+            onPressed: _loadHistoryData,
+            child: const Text('Retry'),
+          ),
+        ],
       ),
     );
   }
 
   Widget _buildHistoryList(List<Task> tasks) {
     // Sort by completion date (newest first)
-    tasks.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+    final sortedTasks = List<Task>.from(tasks);
+    sortedTasks.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
 
     return ListView.builder(
-      itemCount: tasks.length,
+      itemCount: sortedTasks.length,
       itemBuilder: (context, index) {
-        final task = tasks[index];
+        final task = sortedTasks[index];
         final completedDate = DateFormat('MMM dd, yyyy').format(task.updatedAt);
 
         // Add headers for month groups
         Widget? header;
         if (index == 0 ||
-            !_isSameMonth(tasks[index - 1].updatedAt, task.updatedAt)) {
+            !_isSameMonth(sortedTasks[index - 1].updatedAt, task.updatedAt)) {
           header = Padding(
             padding: const EdgeInsets.only(left: 16, top: 16, bottom: 8),
             child: Text(
@@ -154,6 +204,11 @@ class _TaskHistoryPageState extends State<TaskHistoryPage> {
             'Completed or canceled tasks will appear here',
             style: TextStyle(color: Colors.grey),
           ),
+          const SizedBox(height: 24),
+          ElevatedButton(
+            onPressed: _loadHistoryData,
+            child: const Text('Refresh'),
+          ),
         ],
       ),
     );
@@ -179,21 +234,51 @@ class _TaskHistoryPageState extends State<TaskHistoryPage> {
                     ElevatedButton.icon(
                       icon: const Icon(Icons.check_circle),
                       label: const Text('Completed'),
-                      onPressed: () {
-                        context.read<TaskCubit>().loadTasksByStatus(
+                      onPressed: () async {
+                        Navigator.pop(context);
+
+                        setState(() {
+                          _isLoading = true;
+                        });
+
+                        await context.read<TaskCubit>().loadTasksByStatus(
                           TaskStatus.completed,
                         );
-                        Navigator.pop(context);
+
+                        if (!mounted) return;
+
+                        final state = context.read<TaskCubit>().state;
+                        setState(() {
+                          if (state is TasksLoaded) {
+                            _displayedTasks = state.tasks;
+                          }
+                          _isLoading = false;
+                        });
                       },
                     ),
                     ElevatedButton.icon(
                       icon: const Icon(Icons.cancel),
                       label: const Text('Canceled'),
-                      onPressed: () {
-                        context.read<TaskCubit>().loadTasksByStatus(
+                      onPressed: () async {
+                        Navigator.pop(context);
+
+                        setState(() {
+                          _isLoading = true;
+                        });
+
+                        await context.read<TaskCubit>().loadTasksByStatus(
                           TaskStatus.canceled,
                         );
-                        Navigator.pop(context);
+
+                        if (!mounted) return;
+
+                        final state = context.read<TaskCubit>().state;
+                        setState(() {
+                          if (state is TasksLoaded) {
+                            _displayedTasks = state.tasks;
+                          }
+                          _isLoading = false;
+                        });
                       },
                     ),
                   ],
@@ -201,10 +286,10 @@ class _TaskHistoryPageState extends State<TaskHistoryPage> {
                 const SizedBox(height: 8),
                 TextButton(
                   onPressed: () {
-                    context.read<TaskCubit>().loadTasksHistory();
                     Navigator.pop(context);
+                    _loadHistoryData();
                   },
-                  child: const Text('Show All'),
+                  child: const Text('Show All History'),
                 ),
               ],
             ),

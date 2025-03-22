@@ -13,32 +13,58 @@ class TasksPage extends StatefulWidget {
 }
 
 class _TasksPageState extends State<TasksPage> with RouteAware {
-  bool _isFirstLoad = true;
+  // Local cache of tasks to prevent UI flashing
+  List<Task> _displayedTasks = [];
+  bool _isLoading = true;
+  String? _errorMessage;
 
   @override
   void initState() {
     super.initState();
-    // Load tasks when the page is first built
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      final taskCubit = context.read<TaskCubit>();
-      taskCubit.loadTasks();
-      taskCubit.subscribeToTasks(); // Enable real-time updates
-    });
+    // Load active tasks on initial load
+    _loadActiveTasks();
   }
 
-  void _loadTasks() {
-    final taskCubit = context.read<TaskCubit>();
-    // Force refresh on first load, use cache on subsequent loads
-    taskCubit.loadTasks(forceRefresh: _isFirstLoad);
-    if (_isFirstLoad) {
-      _isFirstLoad = false;
+  Future<void> _loadActiveTasks() async {
+    if (!mounted) return;
+
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
+
+    try {
+      // Load tasks directly from repository via cubit
+      final taskCubit = context.read<TaskCubit>();
+      await taskCubit.loadTasks(forceRefresh: true);
+
+      if (!mounted) return;
+
+      setState(() {
+        // Maintain local state for UI stability
+        final state = taskCubit.state;
+        if (state is TasksLoaded && !state.isHistoryView) {
+          _displayedTasks = state.tasks;
+        } else {
+          _displayedTasks = taskCubit.getActiveTasks();
+        }
+        _isLoading = false;
+      });
+
+      // Setup subscription after initial load
+      taskCubit.subscribeToTasks();
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _errorMessage = 'Failed to load tasks: $e';
+        _isLoading = false;
+      });
     }
   }
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    // Register with RouteObserver
     final route = ModalRoute.of(context);
     if (route is PageRoute) {
       appRouteObserver.subscribe(this, route);
@@ -51,120 +77,84 @@ class _TasksPageState extends State<TasksPage> with RouteAware {
     super.dispose();
   }
 
-  // Called when returning to this route
   @override
   void didPopNext() {
-    debugPrint('TasksPage didPopNext called');
-    // Reload tasks when returning to this page
-    _loadTasks();
-  }
-
-  @override
-  void activate() {
-    super.activate();
-    // This is called when the widget is re-inserted into the widget tree
-    debugPrint('TasksPage activate called');
-    _loadTasks();
+    // When returning to this page, refresh tasks
+    _loadActiveTasks();
   }
 
   @override
   Widget build(BuildContext context) {
-    // Check the current state on each build
-    final currentState = context.read<TaskCubit>().state;
-    if (currentState is! TasksLoaded && currentState is! TaskLoading) {
-      debugPrint(
-        'TasksPage build detected non-loaded state: ${currentState.runtimeType}',
-      );
-      // Schedule a reload if we don't have tasks and aren't already loading
-      Future.microtask(() => _loadTasks());
-    }
-
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Tasks'),
+        title: const Text('Active Tasks'),
         actions: [
-          // Add a manual refresh button for testing
           IconButton(
             icon: const Icon(Icons.refresh),
-            onPressed:
-                () => context.read<TaskCubit>().loadTasks(forceRefresh: true),
-            tooltip: 'Force Refresh',
+            onPressed: _loadActiveTasks,
+            tooltip: 'Refresh',
           ),
           IconButton(
             icon: const Icon(Icons.filter_list),
-            onPressed: () {
-              // Show filter options in a modal bottom sheet
-              showModalBottomSheet(
-                context: context,
-                builder: (context) => _buildFilterOptions(context),
-              );
-            },
+            onPressed:
+                () => showModalBottomSheet(
+                  context: context,
+                  builder: (context) => _buildFilterOptions(context),
+                ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.history),
+            onPressed: () => context.go('/tasks/history'),
+            tooltip: 'History',
           ),
         ],
       ),
-      body: BlocConsumer<TaskCubit, TaskState>(
-        // Listen for state changes and log them for debugging
-        listener: (context, state) {
-          debugPrint('TasksPage state changed to: ${state.runtimeType}');
-          if (state is TasksLoaded) {
-            debugPrint('Tasks loaded: ${state.tasks.length} tasks');
-          }
-        },
-        builder: (context, state) {
-          if (state is TaskLoading) {
-            return const Center(child: CircularProgressIndicator());
-          } else if (state is TasksLoaded) {
-            return state.tasks.isEmpty
-                ? _buildEmptyState()
-                : RefreshIndicator(
-                  onRefresh:
-                      () => context.read<TaskCubit>().loadTasks(
-                        forceRefresh: true,
-                      ),
-                  child: ListView.builder(
-                    itemCount: state.tasks.length,
-                    itemBuilder: (context, index) {
-                      final task = state.tasks[index];
-                      return ListTile(
-                        title: Text(task.title),
-                        subtitle: Text(task.description ?? ''),
-                        trailing: Chip(
-                          label: Text(task.status.name),
-                          backgroundColor: _getStatusColor(task.status),
-                        ),
-                        onTap: () => context.go('/tasks/${task.id}'),
-                      );
-                    },
-                  ),
-                );
-          } else if (state is TaskError) {
-            return Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Text(
-                    state.message,
-                    style: const TextStyle(color: Colors.red),
-                  ),
-                  const SizedBox(height: 16),
-                  ElevatedButton(
-                    onPressed:
-                        () => context.read<TaskCubit>().loadTasks(
-                          forceRefresh: true,
-                        ),
-                    child: const Text('Retry'),
-                  ),
-                ],
+      body:
+          _isLoading
+              ? const Center(child: CircularProgressIndicator())
+              : _errorMessage != null
+              ? _buildErrorState(_errorMessage!)
+              : _displayedTasks.isEmpty
+              ? _buildEmptyState()
+              : ListView.builder(
+                itemCount: _displayedTasks.length,
+                itemBuilder: (context, index) {
+                  final task = _displayedTasks[index];
+                  return ListTile(
+                    title: Text(task.title),
+                    subtitle: Text(task.description ?? ''),
+                    trailing: Chip(
+                      label: Text(task.status.name),
+                      backgroundColor: _getStatusColor(task.status),
+                    ),
+                    onTap: () => context.go('/tasks/${task.id}'),
+                  );
+                },
               ),
-            );
-          }
-          return const Center(child: Text('No tasks yet'));
-        },
-      ),
       floatingActionButton: FloatingActionButton(
         onPressed: () => context.go('/tasks/create'),
         tooltip: 'Add Task',
         child: const Icon(Icons.add),
+      ),
+    );
+  }
+
+  Widget _buildErrorState(String message) {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Text(
+            message,
+            style: const TextStyle(color: Colors.red),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 16),
+          ElevatedButton(
+            onPressed: _loadActiveTasks,
+            child: const Text('Retry'),
+          ),
+        ],
       ),
     );
   }
@@ -177,7 +167,7 @@ class _TasksPageState extends State<TasksPage> with RouteAware {
           const Icon(Icons.task_alt, size: 80, color: Colors.grey),
           const SizedBox(height: 16),
           const Text(
-            'No tasks yet',
+            'No active tasks',
             style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
           ),
           const SizedBox(height: 8),
@@ -187,8 +177,7 @@ class _TasksPageState extends State<TasksPage> with RouteAware {
           ),
           const SizedBox(height: 24),
           ElevatedButton(
-            onPressed:
-                () => context.read<TaskCubit>().loadTasks(forceRefresh: true),
+            onPressed: _loadActiveTasks,
             child: const Text('Reload'),
           ),
         ],
@@ -197,6 +186,12 @@ class _TasksPageState extends State<TasksPage> with RouteAware {
   }
 
   Widget _buildFilterOptions(BuildContext context) {
+    final activeStatuses = [
+      TaskStatus.pending,
+      TaskStatus.inProgress,
+      TaskStatus.underReview,
+    ];
+
     return Padding(
       padding: const EdgeInsets.all(16.0),
       child: Column(
@@ -213,18 +208,35 @@ class _TasksPageState extends State<TasksPage> with RouteAware {
             scrollDirection: Axis.horizontal,
             child: Row(
               children:
-                  TaskStatus.values.map((status) {
+                  activeStatuses.map((status) {
                     return Padding(
                       padding: const EdgeInsets.only(right: 8.0),
                       child: FilterChip(
                         label: Text(status.name),
-                        onSelected: (selected) {
-                          if (selected) {
-                            context.read<TaskCubit>().loadTasksByStatus(status);
-                          } else {
-                            context.read<TaskCubit>().loadTasks();
-                          }
+                        onSelected: (selected) async {
                           Navigator.pop(context);
+
+                          setState(() {
+                            _isLoading = true;
+                          });
+
+                          if (selected) {
+                            await context.read<TaskCubit>().loadTasksByStatus(
+                              status,
+                            );
+                          } else {
+                            await context.read<TaskCubit>().loadTasks();
+                          }
+
+                          if (!mounted) return;
+
+                          final state = context.read<TaskCubit>().state;
+                          setState(() {
+                            if (state is TasksLoaded) {
+                              _displayedTasks = state.tasks;
+                            }
+                            _isLoading = false;
+                          });
                         },
                         selected: false,
                       ),
@@ -235,8 +247,8 @@ class _TasksPageState extends State<TasksPage> with RouteAware {
           const SizedBox(height: 8),
           OutlinedButton(
             onPressed: () {
-              context.read<TaskCubit>().loadTasks();
               Navigator.pop(context);
+              _loadActiveTasks();
             },
             child: const Text('Clear Filters'),
           ),

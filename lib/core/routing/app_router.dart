@@ -55,6 +55,15 @@ class AppRouter {
                   child: const TasksPage(),
                 ),
             routes: [
+              // Task history
+              GoRoute(
+                path: 'history',
+                pageBuilder:
+                    (context, state) => MaterialPage(
+                      key: state.pageKey,
+                      child: const TaskHistoryPage(),
+                    ),
+              ),
               GoRoute(
                 path: 'create',
                 pageBuilder:
@@ -75,15 +84,7 @@ class AppRouter {
               ),
             ],
           ),
-          GoRoute(
-            path: '/history',
-            pageBuilder:
-                (context, state) => NoTransitionPage(
-                  key: state.pageKey,
-                  restorationId: 'history-page',
-                  child: const TaskHistoryPage(),
-                ),
-          ),
+
           // Team tab
           GoRoute(path: '/team', builder: (context, state) => const TeamPage()),
 
@@ -101,8 +102,6 @@ class AppRouter {
         ),
   );
 
-  // // Getter to expose the observer to the rest of the app
-  // static RouteObserver<PageRoute> get routeObserver => appRouteObserver;
   // Handle authentication redirects
   static Future<String?> _handleRedirect(
     BuildContext context,

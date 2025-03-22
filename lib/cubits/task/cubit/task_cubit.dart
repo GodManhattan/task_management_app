@@ -10,48 +10,116 @@ var logger = Logger();
 
 class TaskCubit extends Cubit<TaskState> {
   final TaskRepository _taskRepository;
-  List<Task> _cachedTasks = []; // Cache the tasks
+
+  List<Task> _cachedTasks = []; // Cache active tasks
+  List<Task> _cachedHistoryTasks = [];
+
+  // Track whether subscriptions are active
+  bool _tasksSubscriptionActive = false;
+  bool _historySubscriptionActive = false;
 
   TaskCubit(this._taskRepository) : super(TaskInitial());
 
-  // Load all tasks for the current user
+  // Load active tasks
   Future<void> loadTasks({bool forceRefresh = false}) async {
-    // Don't reload if we already have tasks cached (unless forced)
     if (_cachedTasks.isNotEmpty && !forceRefresh) {
-      emit(TasksLoaded(_cachedTasks));
+      emit(TasksLoaded(_cachedTasks, isHistoryView: false));
       return;
     }
 
-    emit(TaskLoading());
+    emit(TaskLoading(forHistoryView: false));
     try {
       final tasks = await _taskRepository.getTasks();
-      _cachedTasks = tasks; // Cache the tasks
-      emit(TasksLoaded(tasks));
+      _cachedTasks = tasks;
+      // Only emit if still in the appropriate loading state or init state
+      if (state is TaskInitial ||
+          (state is TaskLoading && !(state as TaskLoading).forHistoryView)) {
+        emit(TasksLoaded(tasks, isHistoryView: false));
+      }
     } catch (e) {
-      emit(TaskError('Failed to load tasks: ${e.toString()}'));
+      emit(
+        TaskError(
+          'Failed to load tasks: ${e.toString()}',
+          isHistoryView: false,
+        ),
+      );
       logger.e('Failed to load tasks', error: e);
     }
   }
 
-  // Load tasks filtered by status
+  // Load history tasks
+  Future<void> loadTasksHistory() async {
+    emit(TaskLoading(forHistoryView: true));
+    try {
+      final historyTasks = await _taskRepository.getTasksHistory();
+      _cachedHistoryTasks = historyTasks;
+      // Only emit if still in the appropriate loading state or init state
+      if (state is TaskInitial ||
+          (state is TaskLoading && (state as TaskLoading).forHistoryView)) {
+        emit(TasksLoaded(historyTasks, isHistoryView: true));
+      }
+    } catch (e) {
+      emit(
+        TaskError(
+          'Failed to load task history: ${e.toString()}',
+          isHistoryView: true,
+        ),
+      );
+    }
+  }
+
+  // Load tasks by status (can come from either active or history)
   Future<void> loadTasksByStatus(TaskStatus status) async {
-    emit(TaskLoading());
+    final isHistory =
+        status == TaskStatus.completed || status == TaskStatus.canceled;
+    emit(TaskLoading(forHistoryView: isHistory));
     try {
       final tasks = await _taskRepository.getTasksByStatus(status);
-      _cachedTasks = tasks; // Update the cache
-      emit(TasksLoaded(tasks));
+      if (state is TaskInitial ||
+          (state is TaskLoading &&
+              (state as TaskLoading).forHistoryView == isHistory)) {
+        emit(TasksLoaded(tasks, isHistoryView: isHistory));
+      }
     } catch (e) {
-      emit(TaskError('Failed to load tasks: ${e.toString()}'));
+      emit(
+        TaskError(
+          'Failed to load tasks: ${e.toString()}',
+          isHistoryView: isHistory,
+        ),
+      );
       logger.e('Failed to load tasks by status', error: e);
     }
   }
 
-  // Load tasks assigned to a specific user
+  // Modified to ensure it loads active tasks
+  void clearHistoryCache() {
+    emit(TaskInitial()); // Reset state before loading fresh tasks
+    // Ensure we reload active tasks immediately
+    loadTasks(forceRefresh: true);
+  }
+
+  // Modified to ensure it loads active tasks
+  void clearTasks() {
+    emit(TaskInitial()); // Reset to the initial state
+    // Load active tasks immediately
+    loadTasks(forceRefresh: true);
+  }
+
+  // Get tasks for history view - a direct accessor to prevent unnecessary emits
+  List<Task> getHistoryTasks() {
+    return _cachedHistoryTasks;
+  }
+
+  // Get tasks for active view - a direct accessor to prevent unnecessary emits
+  List<Task> getActiveTasks() {
+    return _cachedTasks;
+  }
+
+  // Load tasks assigned to specific user
   Future<void> loadTasksByAssignee(String userId) async {
     emit(TaskLoading());
     try {
       final tasks = await _taskRepository.getTasksByAssignee(userId);
-      _cachedTasks = tasks; // Update the cache
       emit(TasksLoaded(tasks));
     } catch (e) {
       emit(TaskError('Failed to load tasks: ${e.toString()}'));
@@ -59,12 +127,11 @@ class TaskCubit extends Cubit<TaskState> {
     }
   }
 
-  // Search tasks
+  // Search tasks (both active and history)
   Future<void> searchTasks(String query) async {
     emit(TaskLoading());
     try {
       final tasks = await _taskRepository.searchTasks(query);
-      _cachedTasks = tasks; // Update the cache
       emit(TasksLoaded(tasks));
     } catch (e) {
       emit(TaskError('Failed to search tasks: ${e.toString()}'));
@@ -72,32 +139,25 @@ class TaskCubit extends Cubit<TaskState> {
     }
   }
 
-  // Load a specific task by ID
+  // Load specific task (from either active or history)
   Future<void> loadTaskById(String id) async {
     emit(TaskLoading());
     try {
       final task = await _taskRepository.getTaskById(id);
       emit(TaskDetailLoaded(task));
-
-      // Update the task in the cache if it exists
-      final index = _cachedTasks.indexWhere((t) => t.id == id);
-      if (index >= 0) {
-        _cachedTasks[index] = task;
-      }
     } catch (e) {
       emit(TaskError('Failed to load task: ${e.toString()}'));
       logger.e('Failed to load task by ID', error: e);
     }
   }
 
-  // Create a new task
+  // Create task
   Future<void> createTask(Task task) async {
     emit(TaskLoading());
     try {
       final createdTask = await _taskRepository.createTask(task);
       emit(TaskOperationSuccess('Task created successfully'));
 
-      // Add to cache
       _cachedTasks = [createdTask, ..._cachedTasks];
       emit(TasksLoaded(_cachedTasks));
     } catch (e) {
@@ -106,20 +166,28 @@ class TaskCubit extends Cubit<TaskState> {
     }
   }
 
-  // Update an existing task
+  // Update task
   Future<void> updateTask(Task task) async {
     emit(TaskLoading());
     try {
       final updatedTask = await _taskRepository.updateTask(task);
       emit(TaskOperationSuccess('Task updated successfully'));
 
-      // Update in cache
+      // If task is completed/canceled, it will be moved to history via DB trigger
+      // Update cache if found
       final index = _cachedTasks.indexWhere((t) => t.id == task.id);
       if (index >= 0) {
-        _cachedTasks[index] = updatedTask;
+        if (updatedTask.status == TaskStatus.completed ||
+            updatedTask.status == TaskStatus.canceled) {
+          // Remove from active cache if completed
+          _cachedTasks.removeAt(index);
+        } else {
+          // Update in cache
+          _cachedTasks[index] = updatedTask;
+        }
       }
 
-      // After success, load the updated task details
+      // Show updated task details
       emit(TaskDetailLoaded(updatedTask));
     } catch (e) {
       emit(TaskError('Failed to update task: ${e.toString()}'));
@@ -127,23 +195,19 @@ class TaskCubit extends Cubit<TaskState> {
     }
   }
 
-  // Delete a task
+  // Delete task
   Future<void> deleteTask(String id) async {
     emit(TaskLoading());
-    // Store current tasks state for rollback
-    final previousTasks = List<Task>.from(_cachedTasks);
-    // Optimistically update UI
-    _cachedTasks.removeWhere((task) => task.id == id);
-    emit(TasksLoaded(_cachedTasks));
     try {
       await _taskRepository.deleteTask(id);
       emit(TaskOperationSuccess('Task deleted successfully'));
+
+      // Remove from cache if present
+      _cachedTasks.removeWhere((task) => task.id == id);
       emit(TasksLoaded(_cachedTasks));
     } catch (e) {
-      // Restore previous state on error
       emit(TaskError('Failed to delete task: ${e.toString()}'));
-      _cachedTasks = previousTasks;
-      emit(TasksLoaded(_cachedTasks));
+      logger.e('Failed to delete task', error: e);
     }
   }
 
@@ -151,21 +215,27 @@ class TaskCubit extends Cubit<TaskState> {
   Future<void> changeTaskStatus(String taskId, TaskStatus newStatus) async {
     emit(TaskLoading());
     try {
-      // First get the current task
+      // Get current task
       final task = await _taskRepository.getTaskById(taskId);
-      // Create a new task with updated status
+      // Update with new status
       final updatedTask = task.copyWith(status: newStatus);
-      // Update the task
+      // Update task
       final result = await _taskRepository.updateTask(updatedTask);
 
-      // Update in cache
+      // Update cache - if task is completed/canceled, DB trigger will move it to history
       final index = _cachedTasks.indexWhere((t) => t.id == taskId);
       if (index >= 0) {
-        _cachedTasks[index] = result;
+        if (newStatus == TaskStatus.completed ||
+            newStatus == TaskStatus.canceled) {
+          // Remove from active tasks cache
+          _cachedTasks.removeAt(index);
+        } else {
+          // Update in cache
+          _cachedTasks[index] = result;
+        }
       }
 
       emit(TaskOperationSuccess('Task status updated successfully'));
-      // After success, load the updated task details
       emit(TaskDetailLoaded(result));
     } catch (e) {
       emit(TaskError('Failed to change task status: ${e.toString()}'));
@@ -173,25 +243,24 @@ class TaskCubit extends Cubit<TaskState> {
     }
   }
 
-  // Assign task to a user
+  // Assign task to user
   Future<void> assignTask(String taskId, String assigneeId) async {
     emit(TaskLoading());
     try {
-      // First get the current task
+      // Get current task
       final task = await _taskRepository.getTaskById(taskId);
-      // Create a new task with updated assignee
+      // Update with new assignee
       final updatedTask = task.copyWith(assigneeId: assigneeId);
-      // Update the task
+      // Update task
       final result = await _taskRepository.updateTask(updatedTask);
 
-      // Update in cache
+      // Update in cache if present
       final index = _cachedTasks.indexWhere((t) => t.id == taskId);
       if (index >= 0) {
         _cachedTasks[index] = result;
       }
 
       emit(TaskOperationSuccess('Task assigned successfully'));
-      // After success, load the updated task details
       emit(TaskDetailLoaded(result));
     } catch (e) {
       emit(TaskError('Failed to assign task: ${e.toString()}'));
@@ -199,80 +268,39 @@ class TaskCubit extends Cubit<TaskState> {
     }
   }
 
-  // Initialize real-time subscription to tasks
+  // Subscribe to active tasks
   void subscribeToTasks() {
+    if (_tasksSubscriptionActive) return;
+
     try {
+      _tasksSubscriptionActive = true;
       _taskRepository.subscribeToTasks().listen((tasks) {
-        _cachedTasks = tasks; // Update the cache with real-time data
-        emit(TasksLoaded(tasks));
+        _cachedTasks = tasks; // Update cache
+        // Only emit if in the appropriate view mode
+        if (state is TasksLoaded && !(state as TasksLoaded).isHistoryView) {
+          emit(TasksLoaded(tasks, isHistoryView: false));
+        }
       });
     } catch (e) {
       logger.e('Failed to subscribe to tasks', error: e);
-      // Don't emit error state here as it might disrupt current state
-    }
-  }
-  // Load history tasks (completed and cancelled)
-  Future<void> loadTasksHistory({bool forceRefresh = false}) async {
-    // Don't reload if we already have tasks cached (unless forced)
-    if (_cachedTasks.isNotEmpty && !forceRefresh) {
-      final historyTasks =
-          _cachedTasks
-              .where(
-                (task) =>
-                    task.status == TaskStatus.completed ||
-                    task.status == TaskStatus.canceled,
-              )
-              .toList();
-      emit(TasksLoaded(historyTasks));
-      return;
-    }
-
-    emit(TaskLoading());
-    try {
-      // First, load all tasks
-      final allTasks = await _taskRepository.getTasks();
-      _cachedTasks = allTasks; // Update the cache
-
-      // Filter for completed and canceled tasks
-      final historyTasks =
-          allTasks
-              .where(
-                (task) =>
-                    task.status == TaskStatus.completed ||
-                    task.status == TaskStatus.canceled,
-              )
-              .toList();
-
-      emit(TasksLoaded(historyTasks));
-    } catch (e) {
-      emit(TaskError('Failed to load task history: ${e.toString()}'));
-      logger.e('Failed to load task history', error: e);
     }
   }
 
-  // Load tasks by completion date (most recent first)
-  Future<void> loadTasksByCompletionDate() async {
-    emit(TaskLoading());
+  // Subscribe to history tasks
+  void subscribeToTaskHistory() {
+    if (_historySubscriptionActive) return;
+
     try {
-      // Get all tasks
-      final tasks = await _taskRepository.getTasks();
-      _cachedTasks = tasks; // Update the cache
-
-      // Filter history tasks and sort by updated_at (completion date)
-      final historyTasks =
-          tasks
-              .where(
-                (task) =>
-                    task.status == TaskStatus.completed ||
-                    task.status == TaskStatus.canceled,
-              )
-              .toList()
-            ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
-
-      emit(TasksLoaded(historyTasks));
+      _historySubscriptionActive = true;
+      _taskRepository.subscribeToTaskHistory().listen((tasks) {
+        _cachedHistoryTasks = tasks;
+        // Only emit if in the appropriate view mode
+        if (state is TasksLoaded && (state as TasksLoaded).isHistoryView) {
+          emit(TasksLoaded(tasks, isHistoryView: true));
+        }
+      });
     } catch (e) {
-      emit(TaskError('Failed to load task history: ${e.toString()}'));
-      logger.e('Failed to load tasks by completion date', error: e);
+      logger.e('Failed to subscribe to task history', error: e);
     }
   }
 }

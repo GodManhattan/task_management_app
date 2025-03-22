@@ -1,10 +1,13 @@
 import '../../domain/models/task.model.dart';
 
 abstract class TaskRepository {
-  /// Get all tasks for the current user (owned or assigned)
+  /// Get all active tasks for the current user (owned or assigned)
   Future<List<Task>> getTasks();
 
-  /// Get a specific task by ID
+  /// Get completed or canceled tasks from history
+  Future<List<Task>> getTasksHistory();
+
+  /// Get a specific task by ID (from either active or history)
   Future<Task> getTaskById(String id);
 
   /// Create a new task
@@ -25,6 +28,9 @@ abstract class TaskRepository {
   /// Search tasks by keyword
   Future<List<Task>> searchTasks(String query);
 
-  /// Subscribe to real-time task updates
+  /// Subscribe to real-time active task updates
   Stream<List<Task>> subscribeToTasks();
+
+  /// Subscribe to real-time task history updates
+  Stream<List<Task>> subscribeToTaskHistory();
 }
