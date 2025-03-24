@@ -12,7 +12,7 @@ import '../../presentation/pages/tasks/task_create_page.dart';
 import '../../presentation/pages/settings/profile_page.dart';
 import '../../presentation/pages/splash_page.dart';
 import '../../presentation/pages/tasks/tasks_page.dart';
-import '../di/service_locator.dart';
+import '../dependency injection/service_locator.dart';
 import '../../domain/repositories/auth.repository.dart';
 
 class AppRouter {
@@ -119,7 +119,7 @@ class AppRouter {
         state.matchedLocation == '/reset-password';
 
     // Perform a fresh session validation
-    final isValid = await authRepository.isSessionValid();
+    final isValid = await authRepository.ensureValidSession();
 
     if (!isValid && !isAuthRoute) {
       // Update the auth state in the cubit

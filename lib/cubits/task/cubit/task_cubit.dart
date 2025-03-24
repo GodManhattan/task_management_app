@@ -10,7 +10,8 @@ var logger = Logger();
 
 class TaskCubit extends Cubit<TaskState> {
   final TaskRepository _taskRepository;
-
+  Stream<List<Task>>? _tasksStream;
+  bool _isStreamInitialized = false;
   List<Task> _cachedTasks = []; // Cache active tasks
   List<Task> _cachedHistoryTasks = [];
 
@@ -18,68 +19,37 @@ class TaskCubit extends Cubit<TaskState> {
   bool _tasksSubscriptionActive = false;
   bool _historySubscriptionActive = false;
 
-  TaskCubit(this._taskRepository) : super(TaskInitial());
+  TaskCubit(this._taskRepository) : super(TaskInitial()) {}
 
-  // Load active tasks
-  Future<void> loadTasks({bool forceRefresh = false}) async {
-    if (_cachedTasks.isNotEmpty && !forceRefresh) {
-      emit(TasksLoaded(_cachedTasks, isHistoryView: false));
-      return;
+  // stream getter that ensures the stream is initialized
+  Stream<List<Task>> get tasksStream {
+    if (!_isStreamInitialized) {
+      _isStreamInitialized = true;
+      _tasksStream = _taskRepository.subscribeToTasks();
     }
-
-    emit(TaskLoading(forHistoryView: false));
-    try {
-      final tasks = await _taskRepository.getTasks();
-      _cachedTasks = tasks;
-      // Only emit if still in the appropriate loading state or init state
-      if (state is TaskInitial ||
-          (state is TaskLoading && !(state as TaskLoading).forHistoryView)) {
-        emit(TasksLoaded(tasks, isHistoryView: false));
-      }
-    } catch (e) {
-      emit(
-        TaskError(
-          'Failed to load tasks: ${e.toString()}',
-          isHistoryView: false,
-        ),
-      );
-      logger.e('Failed to load tasks', error: e);
-    }
+    return _tasksStream!;
   }
 
-  // Load history tasks
-  Future<void> loadTasksHistory() async {
-    emit(TaskLoading(forHistoryView: true));
-    try {
-      final historyTasks = await _taskRepository.getTasksHistory();
-      _cachedHistoryTasks = historyTasks;
-      // Only emit if still in the appropriate loading state or init state
-      if (state is TaskInitial ||
-          (state is TaskLoading && (state as TaskLoading).forHistoryView)) {
-        emit(TasksLoaded(historyTasks, isHistoryView: true));
-      }
-    } catch (e) {
-      emit(
-        TaskError(
-          'Failed to load task history: ${e.toString()}',
-          isHistoryView: true,
-        ),
-      );
-    }
-  }
-
-  // Load tasks by status (can come from either active or history)
-  Future<void> loadTasksByStatus(TaskStatus status) async {
-    final isHistory =
-        status == TaskStatus.completed || status == TaskStatus.canceled;
+  // In task_cubit.dart
+  Future<void> loadTasks({
+    TaskStatus? status,
+    bool isHistory = false,
+    bool forceRefresh = false,
+  }) async {
     emit(TaskLoading(forHistoryView: isHistory));
+
     try {
-      final tasks = await _taskRepository.getTasksByStatus(status);
-      if (state is TaskInitial ||
-          (state is TaskLoading &&
-              (state as TaskLoading).forHistoryView == isHistory)) {
-        emit(TasksLoaded(tasks, isHistoryView: isHistory));
+      final List<Task> tasks;
+
+      if (status != null) {
+        tasks = await _taskRepository.getTasksByStatus(status);
+      } else if (isHistory) {
+        tasks = await _taskRepository.getTasksHistory();
+      } else {
+        tasks = await _taskRepository.getTasks();
       }
+
+      emit(TasksLoaded(tasks, isHistoryView: isHistory));
     } catch (e) {
       emit(
         TaskError(
@@ -87,7 +57,6 @@ class TaskCubit extends Cubit<TaskState> {
           isHistoryView: isHistory,
         ),
       );
-      logger.e('Failed to load tasks by status', error: e);
     }
   }
 
@@ -171,7 +140,6 @@ class TaskCubit extends Cubit<TaskState> {
     emit(TaskLoading());
     try {
       final updatedTask = await _taskRepository.updateTask(task);
-      emit(TaskOperationSuccess('Task updated successfully'));
 
       // If task is completed/canceled, it will be moved to history via DB trigger
       // Update cache if found
@@ -270,8 +238,6 @@ class TaskCubit extends Cubit<TaskState> {
 
   // Subscribe to active tasks
   void subscribeToTasks() {
-    if (_tasksSubscriptionActive) return;
-
     try {
       _tasksSubscriptionActive = true;
       _taskRepository.subscribeToTasks().listen((tasks) {

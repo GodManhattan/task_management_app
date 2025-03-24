@@ -34,31 +34,27 @@ class _TasksPageState extends State<TasksPage> with RouteAware {
     });
 
     try {
-      // Load tasks directly from repository via cubit
+      // Load initial tasks
       final taskCubit = context.read<TaskCubit>();
       await taskCubit.loadTasks(forceRefresh: true);
 
-      if (!mounted) return;
-
-      setState(() {
-        // Maintain local state for UI stability
-        final state = taskCubit.state;
-        if (state is TasksLoaded && !state.isHistoryView) {
-          _displayedTasks = state.tasks;
-        } else {
-          _displayedTasks = taskCubit.getActiveTasks();
-        }
-        _isLoading = false;
-      });
-
-      // Setup subscription after initial load
-      taskCubit.subscribeToTasks();
+      // Tasks have been loaded, we can stop showing the loading indicator
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+          // Get initial tasks from the cubit state
+          if (taskCubit.state is TasksLoaded) {
+            _displayedTasks = (taskCubit.state as TasksLoaded).tasks;
+          }
+        });
+      }
     } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _errorMessage = 'Failed to load tasks: $e';
-        _isLoading = false;
-      });
+      if (mounted) {
+        setState(() {
+          _errorMessage = 'Failed to load tasks: $e';
+          _isLoading = false;
+        });
+      }
     }
   }
 
@@ -116,18 +112,36 @@ class _TasksPageState extends State<TasksPage> with RouteAware {
               ? _buildErrorState(_errorMessage!)
               : _displayedTasks.isEmpty
               ? _buildEmptyState()
-              : ListView.builder(
-                itemCount: _displayedTasks.length,
-                itemBuilder: (context, index) {
-                  final task = _displayedTasks[index];
-                  return ListTile(
-                    title: Text(task.title),
-                    subtitle: Text(task.description ?? ''),
-                    trailing: Chip(
-                      label: Text(task.status.name),
-                      backgroundColor: _getStatusColor(task.status),
-                    ),
-                    onTap: () => context.go('/tasks/${task.id}'),
+              : StreamBuilder<List<Task>>(
+                stream: context.read<TaskCubit>().tasksStream,
+                initialData:
+                    _displayedTasks, // Use the tasks we loaded initially
+                builder: (context, snapshot) {
+                  if (snapshot.hasError) {
+                    return Center(child: Text('Error: ${snapshot.error}'));
+                  }
+
+                  // Use data from stream, falling back to initial data
+                  final tasks = snapshot.data ?? _displayedTasks;
+
+                  if (tasks.isEmpty) {
+                    return _buildEmptyState();
+                  }
+
+                  return ListView.builder(
+                    itemCount: tasks.length,
+                    itemBuilder: (context, index) {
+                      final task = tasks[index];
+                      return ListTile(
+                        title: Text(task.title),
+                        subtitle: Text(task.description ?? ''),
+                        trailing: Chip(
+                          label: Text(task.status.name),
+                          backgroundColor: _getStatusColor(task.status),
+                        ),
+                        onTap: () => context.go('/tasks/${task.id}'),
+                      );
+                    },
                   );
                 },
               ),
@@ -221,8 +235,8 @@ class _TasksPageState extends State<TasksPage> with RouteAware {
                           });
 
                           if (selected) {
-                            await context.read<TaskCubit>().loadTasksByStatus(
-                              status,
+                            await context.read<TaskCubit>().loadTasks(
+                              status: status,
                             );
                           } else {
                             await context.read<TaskCubit>().loadTasks();

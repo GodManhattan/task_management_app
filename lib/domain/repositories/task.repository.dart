@@ -33,4 +33,7 @@ abstract class TaskRepository {
 
   /// Subscribe to real-time task history updates
   Stream<List<Task>> subscribeToTaskHistory();
+
+  /// Subscribe to real-time task updates
+  Stream<List<Task>> subscribeToTasksDirectly();
 }

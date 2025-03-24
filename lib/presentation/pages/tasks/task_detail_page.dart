@@ -8,6 +8,7 @@ import 'package:intl/intl.dart';
 import 'package:open_filex/open_filex.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:task_management_app/core/helpers/file_cache_manager.dart';
 import 'package:task_management_app/cubits/auth/cubit/auth_cubit.dart';
 import 'package:task_management_app/cubits/comment/cubit/comment_cubit.dart';
 import 'package:task_management_app/cubits/task/cubit/task_cubit.dart';
@@ -37,9 +38,6 @@ class _TaskDetailPageState extends State<TaskDetailPage> {
     super.initState();
     // Load the task on page load
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<TaskCubit>().loadTaskById(widget.taskId);
-      // Load comments for this task
-      context.read<CommentCubit>().getCommentsByTaskId(widget.taskId);
       _loadTaskAndComments();
     });
   }
@@ -137,48 +135,46 @@ class _TaskDetailPageState extends State<TaskDetailPage> {
   }
 
   Future<void> _openDocument(String url) async {
+    final fileName = extractOriginalFileName(url);
+
+    // Show initial loading indicator
+    final snackBarController = ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(
+          children: [
+            SizedBox(
+              width: 20,
+              height: 20,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
+            SizedBox(width: 16),
+            Text('Processing $fileName...'),
+          ],
+        ),
+        duration: Duration(minutes: 1), // Long duration, we'll dismiss manually
+      ),
+    );
+
     try {
-      String file = extractOriginalFileName(url);
-      if (file.toLowerCase().endsWith('.pdf')) {
-        // Open the PDF directly in the browser
-        final Uri uri = Uri.parse(url);
-        if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
-          throw Exception('Could not launch $url');
-        }
-      } else {
-        // Handle other file types (download & open)
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('Downloading file...')));
+      // Get file from cache manager
+      final file = await FileCacheManager.getFile(url, fileName);
 
-        // Extract file name from URL
-        final fileName = extractOriginalFileName(url);
+      // Close loading indicator
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
 
-        // Get temporary directory
-        final dir = await getTemporaryDirectory();
-        final filePath = '${dir.path}/$fileName';
-
-        // Download the file using Dio
-        final dio = Dio();
-        await dio.download(url, filePath);
-
-        // Open the file with the default app
-        final result = await OpenFilex.open(filePath);
-        if (result.type != ResultType.done) {
-          ScaffoldMessenger.of(
-            context,
-          ).showSnackBar(SnackBar(content: Text('Error: ${result.message}')));
-        }
-        Future.delayed(const Duration(minutes: 30), () {
-          try {
-            File(filePath).delete();
-          } catch (_) {}
-        });
+      // Open the file
+      final result = await OpenFilex.open(file.path);
+      if (result.type != ResultType.done) {
+        throw Exception('Failed to open file: ${result.message}');
       }
     } catch (e) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Failed to open file: $e')));
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error: ${e.toString()}'),
+          backgroundColor: Colors.red,
+        ),
+      );
     }
   }
 
@@ -579,13 +575,20 @@ class _TaskDetailPageState extends State<TaskDetailPage> {
             );
           }
 
-          // Load all user IDs from comments
-          final userCubit = context.read<UserCubit>();
-          final userIds = comments.map((c) => c.userId).toSet().toList();
+          // Preload all users at once instead of individually
+          if (comments.isNotEmpty) {
+            final userIds =
+                {
+                  task.ownerId,
+                  if (task.assigneeId != null) task.assigneeId!,
+                  ...comments.map((c) => c.userId),
+                }.toList();
 
-          if (userIds.isNotEmpty) {
-            userCubit.loadUsersByIds(userIds);
+            // Preload in background
+            context.read<UserCubit>().preloadUsers(userIds);
           }
+
+        
 
           return ListView.separated(
             shrinkWrap: true,

@@ -108,9 +108,6 @@ class AuthCubit extends Cubit<AuthState> {
   Future<void> refreshAuthState() async {
     emit(AuthLoading());
     try {
-      // Forzar la actualización de la sesión en Supabase
-      await _authRepository.refreshSession();
-
       final user = await _authRepository.getCurrentUser();
       if (user != null) {
         emit(AuthAuthenticated(user as usermodel.User));
@@ -125,7 +122,7 @@ class AuthCubit extends Cubit<AuthState> {
   Future<void> verifySession() async {
     emit(AuthLoading());
     try {
-      bool sessionValid = await _authRepository.isSessionValid();
+      bool sessionValid = await _authRepository.ensureValidSession();
       if (!sessionValid) {
         emit(AuthUnauthenticated());
         return;

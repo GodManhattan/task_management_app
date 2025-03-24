@@ -25,12 +25,24 @@ Future<void> setupServiceLocator() async {
     () => SupabaseAuthRepository(serviceLocator()),
   );
 
+  // Register task repository with proper disposal
   serviceLocator.registerLazySingleton<TaskRepository>(
     () => SupabaseTaskRepository(serviceLocator()),
+    dispose: (repo) {
+      if (repo is SupabaseTaskRepository) {
+        repo.dispose();
+      }
+    },
   );
 
+  // Register comment repository with proper disposal
   serviceLocator.registerLazySingleton<CommentRepository>(
     () => SupabaseCommentRepository(serviceLocator()),
+    dispose: (repo) {
+      if (repo is SupabaseCommentRepository) {
+        repo.dispose();
+      }
+    },
   );
 
   serviceLocator.registerLazySingleton<AuthCubit>(
@@ -40,13 +52,21 @@ Future<void> setupServiceLocator() async {
   serviceLocator.registerLazySingleton<UserRepository>(
     () => SupabaseUserRepository(serviceLocator<SupabaseClient>()),
   );
+
   serviceLocator.registerFactory<UserCubit>(
     () => UserCubit(serviceLocator<UserRepository>()),
   );
+
   serviceLocator.registerFactory<CommentCubit>(
     () => CommentCubit(serviceLocator<CommentRepository>()),
   );
+
   serviceLocator.registerFactory<TaskCubit>(
     () => TaskCubit(serviceLocator<TaskRepository>()),
   );
+}
+
+// Call this method when the app is being terminated
+void disposeServiceLocator() {
+  serviceLocator.reset();
 }

@@ -3,7 +3,9 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:task_management_app/core/di/service_locator.dart';
+import 'package:task_management_app/core/dependency%20injection/service_locator.dart';
+import 'package:task_management_app/core/helpers/file_cache_manager.dart';
+
 import 'package:task_management_app/core/routing/app_router.dart';
 
 import 'package:task_management_app/cubits/auth/cubit/auth_cubit.dart'
@@ -28,6 +30,7 @@ void main() async {
   try {
     // First load environment variables
     await dotenv.load(fileName: ".env");
+
     // Initialize Supabase
     await Supabase.initialize(
       url: AppConfig.supabaseUrl,
@@ -37,14 +40,21 @@ void main() async {
             SecureLocalStorage(), // Custom secure storage implementation
         autoRefreshToken: true,
       ),
+      realtimeClientOptions: const RealtimeClientOptions(
+        eventsPerSecond: 10, // Limit events per second to avoid overwhelming
+      ),
     );
+
     // Initialize deep links before running the app
     await initDeepLinks();
 
     // Setup service locator
     await setupServiceLocator();
 
-    // In your app initialization
+    // Clean up expired cached files
+    await FileCacheManager.cleanupCache();
+
+    // Periodic session verification
     Timer.periodic(Duration(minutes: 30), (_) {
       serviceLocator<AuthCubit>().verifySession();
     });
@@ -76,13 +86,18 @@ void main() async {
     // If there's an error during initialization, still remove the splash screen
     // and show the app with appropriate error handling
     FlutterNativeSplash.remove();
-    runApp(const ErrorPage());
+    runApp(ErrorPage(errorMessage: e.toString()));
   }
 }
 
-class MainApp extends StatelessWidget {
+class MainApp extends StatefulWidget {
   const MainApp({super.key});
 
+  @override
+  State<MainApp> createState() => _MainAppState();
+}
+
+class _MainAppState extends State<MainApp> {
   @override
   Widget build(BuildContext context) {
     return MaterialApp.router(
@@ -93,5 +108,12 @@ class MainApp extends StatelessWidget {
       ),
       routerConfig: AppRouter.router,
     );
+  }
+
+  @override
+  void dispose() {
+    // Clean up resources when app is terminated
+    disposeServiceLocator();
+    super.dispose();
   }
 }

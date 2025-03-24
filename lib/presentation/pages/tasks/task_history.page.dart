@@ -36,7 +36,7 @@ class _TaskHistoryPageState extends State<TaskHistoryPage> {
     try {
       // Load tasks directly from repository via cubit
       final taskCubit = context.read<TaskCubit>();
-      await taskCubit.loadTasksHistory();
+      await taskCubit.loadTasks(isHistory: true);
 
       if (!mounted) return;
 
@@ -241,8 +241,8 @@ class _TaskHistoryPageState extends State<TaskHistoryPage> {
                           _isLoading = true;
                         });
 
-                        await context.read<TaskCubit>().loadTasksByStatus(
-                          TaskStatus.completed,
+                        await context.read<TaskCubit>().loadTasks(
+                          status: TaskStatus.completed,
                         );
 
                         if (!mounted) return;
@@ -266,8 +266,8 @@ class _TaskHistoryPageState extends State<TaskHistoryPage> {
                           _isLoading = true;
                         });
 
-                        await context.read<TaskCubit>().loadTasksByStatus(
-                          TaskStatus.canceled,
+                        await context.read<TaskCubit>().loadTasks(
+                          status: TaskStatus.canceled,
                         );
 
                         if (!mounted) return;

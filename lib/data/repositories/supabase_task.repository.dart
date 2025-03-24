@@ -1,11 +1,18 @@
+import 'dart:async';
+
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../domain/models/task.model.dart';
 import '../../domain/repositories/task.repository.dart';
+import '../../core/services/realtime_service.dart';
+import 'package:logger/logger.dart';
 
 class SupabaseTaskRepository implements TaskRepository {
   final SupabaseClient _supabaseClient;
+  final RealtimeService _realtimeService;
+  final Logger _logger = Logger();
 
-  SupabaseTaskRepository(this._supabaseClient);
+  SupabaseTaskRepository(this._supabaseClient)
+    : _realtimeService = RealtimeService(_supabaseClient);
 
   @override
   Future<List<Task>> getTasks() async {
@@ -17,24 +24,14 @@ class SupabaseTaskRepository implements TaskRepository {
 
     try {
       final data = await _supabaseClient
-          .from('tasks') // Only active tasks table
+          .from('tasks')
           .select()
           .or('owner_id.eq.${currentUser.id},assignee_id.eq.${currentUser.id}')
           .order('created_at', ascending: false);
 
-      if (data is List) {
-        return data.map<Task>((item) {
-          if (item is Map<String, dynamic>) {
-            return Task.fromJson(item);
-          } else {
-            throw Exception('Invalid format for Task in Supabase response');
-          }
-        }).toList();
-      } else {
-        throw Exception('Invalid response format from Supabase');
-      }
+      return data.map<Task>((item) => Task.fromJson(item)).toList();
     } catch (e) {
-      print('Error in getTasks: $e');
+      _logger.e('Error in getTasks: $e');
       rethrow;
     }
   }
@@ -49,31 +46,20 @@ class SupabaseTaskRepository implements TaskRepository {
 
     try {
       final data = await _supabaseClient
-          .from('task_history') // History table
+          .from('task_history')
           .select()
           .or('owner_id.eq.${currentUser.id},assignee_id.eq.${currentUser.id}')
           .order('completed_at', ascending: false);
 
-      if (data is List) {
-        return data.map<Task>((item) {
-          if (item is Map<String, dynamic>) {
-            return Task.fromJson(item);
-          } else {
-            throw Exception('Invalid format for Task in Supabase response');
-          }
-        }).toList();
-      } else {
-        throw Exception('Invalid response format from Supabase');
-      }
+      return data.map<Task>((item) => Task.fromJson(item)).toList();
     } catch (e) {
-      print('Error in getTasksHistory: $e');
+      _logger.e('Error in getTasksHistory: $e');
       rethrow;
     }
   }
 
   @override
   Future<Task> getTaskById(String id) async {
-    // First try to find in active tasks
     try {
       final data =
           await _supabaseClient
@@ -86,7 +72,6 @@ class SupabaseTaskRepository implements TaskRepository {
         return Task.fromJson(data);
       }
 
-      // If not found in active tasks, try history
       final historyData =
           await _supabaseClient
               .from('task_history')
@@ -95,7 +80,7 @@ class SupabaseTaskRepository implements TaskRepository {
               .single();
       return Task.fromJson(historyData);
     } catch (e) {
-      print('Error in getTaskById: $e');
+      _logger.e('Error in getTaskById: $e');
       rethrow;
     }
   }
@@ -127,11 +112,9 @@ class SupabaseTaskRepository implements TaskRepository {
 
   @override
   Future<void> deleteTask(String id) async {
-    // First try to delete from active tasks
     try {
       await _supabaseClient.from('tasks').delete().eq('id', id);
     } catch (e) {
-      // If not found in active tasks, try history
       await _supabaseClient.from('task_history').delete().eq('id', id);
     }
   }
@@ -144,7 +127,6 @@ class SupabaseTaskRepository implements TaskRepository {
       throw Exception('No authenticated user');
     }
 
-    // Determine which table to query based on status
     final table =
         (status == TaskStatus.completed || status == TaskStatus.canceled)
             ? 'task_history'
@@ -165,21 +147,18 @@ class SupabaseTaskRepository implements TaskRepository {
 
   @override
   Future<List<Task>> getTasksByAssignee(String userId) async {
-    // First get active tasks assigned to user
     final activeTasks = await _supabaseClient
         .from('tasks')
         .select()
         .eq('assignee_id', userId)
         .order('created_at', ascending: false);
 
-    // Then get history tasks assigned to user
     final historyTasks = await _supabaseClient
         .from('task_history')
         .select()
         .eq('assignee_id', userId)
         .order('completed_at', ascending: false);
 
-    // Combine and convert both
     final allTasks = [...activeTasks, ...historyTasks];
     return allTasks.map<Task>((json) => Task.fromJson(json)).toList();
   }
@@ -192,7 +171,6 @@ class SupabaseTaskRepository implements TaskRepository {
       throw Exception('No authenticated user');
     }
 
-    // Search active tasks
     final activeTasks = await _supabaseClient
         .from('tasks')
         .select()
@@ -200,7 +178,6 @@ class SupabaseTaskRepository implements TaskRepository {
         .or('title.ilike.%$query%,description.ilike.%$query%')
         .order('created_at', ascending: false);
 
-    // Search history tasks
     final historyTasks = await _supabaseClient
         .from('task_history')
         .select()
@@ -208,24 +185,96 @@ class SupabaseTaskRepository implements TaskRepository {
         .or('title.ilike.%$query%,description.ilike.%$query%')
         .order('completed_at', ascending: false);
 
-    // Combine results
     final allTasks = [...activeTasks, ...historyTasks];
     return allTasks.map<Task>((json) => Task.fromJson(json)).toList();
   }
 
   @override
-  Stream<List<Task>> subscribeToTasks() {
+  Stream<List<Task>> subscribeToTasksDirectly() {
     final currentUser = _supabaseClient.auth.currentUser;
-
     if (currentUser == null) {
       throw Exception('No authenticated user');
     }
 
-    return _supabaseClient
+    final controller = StreamController<List<Task>>.broadcast();
+
+    // Initialize with current data
+    _supabaseClient
         .from('tasks')
-        .stream(primaryKey: ['id'])
-        .eq('owner_id', currentUser.id)
-        .map((data) => data.map<Task>((json) => Task.fromJson(json)).toList());
+        .select()
+        .or('owner_id.eq.${currentUser.id},assignee_id.eq.${currentUser.id}')
+        .then((data) {
+          final tasks = data.map<Task>((item) => Task.fromJson(item)).toList();
+          if (!controller.isClosed) controller.add(tasks);
+        })
+        .catchError((error) {
+          _logger.e("Error fetching initial tasks: $error");
+          // Don't close the controller on error, just log it
+        });
+
+    // Set up realtime subscription directly
+    final channel = _supabaseClient.channel('public:tasks');
+    channel
+        .onPostgresChanges(
+          schema: 'public',
+          table: 'tasks',
+          event: PostgresChangeEvent.all,
+          callback: (payload, [ref]) {
+            _logger.d("Received realtime payload: $payload");
+
+            // Refresh the entire list on any change
+            _supabaseClient
+                .from('tasks')
+                .select()
+                .or(
+                  'owner_id.eq.${currentUser.id},assignee_id.eq.${currentUser.id}',
+                )
+                .then((data) {
+                  final tasks =
+                      data.map<Task>((item) => Task.fromJson(item)).toList();
+                  if (!controller.isClosed) controller.add(tasks);
+                })
+                .catchError((error) {
+                  _logger.e("Error refreshing tasks after change: $error");
+                });
+          },
+        )
+        .subscribe((status, [error]) {
+          _logger.d("Channel status changed to: $status");
+          if (error != null) {
+            _logger.e("Channel error: $error");
+          }
+        });
+
+    // Clean up when no longer needed
+    controller.onCancel = () {
+      _logger.d("Cleaning up tasks subscription");
+      channel.unsubscribe();
+      _supabaseClient.removeChannel(channel);
+    };
+
+    return controller.stream;
+  }
+
+  // @override
+  // Stream<List<Task>> subscribeToTasks() {
+  //   final currentUser = _supabaseClient.auth.currentUser;
+
+  //   if (currentUser == null) {
+  //     throw Exception('No authenticated user');
+  //   }
+
+  //   return _realtimeService.createTableSubscription<Task>(
+  //     table: 'tasks',
+  //     primaryKey: 'id',
+  //     fromJson: (json) => Task.fromJson(json),
+  //     eq: 'owner_id',
+  //     eqValue: currentUser.id,
+  //   );
+  // }
+  @override
+  Stream<List<Task>> subscribeToTasks() {
+    return subscribeToTasksDirectly();
   }
 
   @override
@@ -236,10 +285,16 @@ class SupabaseTaskRepository implements TaskRepository {
       throw Exception('No authenticated user');
     }
 
-    return _supabaseClient
-        .from('task_history')
-        .stream(primaryKey: ['id'])
-        .eq('owner_id', currentUser.id)
-        .map((data) => data.map<Task>((json) => Task.fromJson(json)).toList());
+    return _realtimeService.createTableSubscription<Task>(
+      table: 'task_history',
+      primaryKey: 'id',
+      fromJson: (json) => Task.fromJson(json),
+      eq: 'owner_id',
+      eqValue: currentUser.id,
+    );
+  }
+
+  void dispose() {
+    _realtimeService.dispose();
   }
 }

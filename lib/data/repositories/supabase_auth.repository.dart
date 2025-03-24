@@ -149,23 +149,49 @@ class SupabaseAuthRepository implements AuthRepository {
     return _supabaseClient.auth.onAuthStateChange;
   }
 
-  @override
-  Future<bool> isSessionValid() async {
-    final currentSession = _supabaseClient.auth.currentSession;
-    if (currentSession == null) return false;
+  // @override
+  // Future<bool> isSessionValid() async {
+  //   final currentSession = _supabaseClient.auth.currentSession;
+  //   if (currentSession == null) return false;
 
-    // Verifica si el token ha expirado o expirará en los próximos 5 minutos
-    final expiresAt = DateTime.fromMillisecondsSinceEpoch(
-      currentSession.expiresAt! * 1000,
-    );
-    return expiresAt.isAfter(DateTime.now().add(Duration(minutes: 5)));
-  }
+  //   // Verifica si el token ha expirado o expirará en los próximos 5 minutos
+  //   final expiresAt = DateTime.fromMillisecondsSinceEpoch(
+  //     currentSession.expiresAt! * 1000,
+  //   );
+  //   return expiresAt.isAfter(DateTime.now().add(Duration(minutes: 5)));
+  // }
+
+  // @override
+  // Future<void> refreshSession() async {
+  //   final response = await _supabaseClient.auth.refreshSession();
+  //   if (response.session == null) {
+  //     throw Exception('No active session found');
+  //   }
+  // }
 
   @override
-  Future<void> refreshSession() async {
-    final response = await _supabaseClient.auth.refreshSession();
-    if (response.session == null) {
-      throw Exception('No active session found');
+  Future<bool> ensureValidSession() async {
+    try {
+      final currentSession = _supabaseClient.auth.currentSession;
+      if (currentSession == null) return false;
+
+      // Check if session is about to expire (within 10 minutes)
+      final expiresAt = DateTime.fromMillisecondsSinceEpoch(
+        currentSession.expiresAt! * 1000,
+      );
+
+      if (expiresAt.isAfter(DateTime.now().add(Duration(minutes: 10)))) {
+        // Session is still valid
+        return true;
+      }
+
+      // Session is close to expiration, refresh it
+      logger.d('Session expiring soon, refreshing...');
+      final response = await _supabaseClient.auth.refreshSession();
+      return response.session != null;
+    } catch (e) {
+      logger.e('Error checking/refreshing session', error: e);
+      return false;
     }
   }
 }
