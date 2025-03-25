@@ -51,7 +51,7 @@ class Comment extends Equatable {
       taskId: taskId,
       userId: userId,
       content: content,
-      createdAt: DateTime.now(),
+      createdAt: DateTime.now().toUtc(),
       attachments: attachments,
     );
   }
@@ -63,7 +63,7 @@ class Comment extends Equatable {
       taskId: json['task_id'],
       userId: json['user_id'],
       content: json['content'],
-      createdAt: DateTime.parse(json['created_at']),
+      createdAt: DateTime.parse(json['created_at']).toLocal(),
       isEdited: json['is_edited'] ?? false,
       editedAt:
           json['edited_at'] != null ? DateTime.parse(json['edited_at']) : null,
@@ -106,7 +106,8 @@ class Comment extends Equatable {
   /// Format the timestamp for display
   String get formattedTimestamp {
     final now = DateTime.now();
-    final difference = now.difference(createdAt);
+    final localCreatedAt = createdAt;
+    final difference = now.difference(localCreatedAt);
 
     if (difference.inMinutes < 1) {
       return 'Just now';
@@ -117,7 +118,7 @@ class Comment extends Equatable {
     } else if (difference.inDays < 7) {
       return '${difference.inDays} days ago';
     } else {
-      return '${createdAt.month}/${createdAt.day}/${createdAt.year}';
+      return '${localCreatedAt.month}/${localCreatedAt.day}/${localCreatedAt.year}';
     }
   }
 

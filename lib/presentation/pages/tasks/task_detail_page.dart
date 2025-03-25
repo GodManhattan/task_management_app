@@ -63,7 +63,10 @@ class _TaskDetailPageState extends State<TaskDetailPage> {
   void _loadTaskAndComments() {
     if (mounted) {
       context.read<TaskCubit>().loadTaskById(widget.taskId);
+      // First load comments normally
       context.read<CommentCubit>().getCommentsByTaskId(widget.taskId);
+      // Then subscribe to real-time updates
+      context.read<CommentCubit>().subscribeToComments(widget.taskId);
     }
   }
 
@@ -138,7 +141,7 @@ class _TaskDetailPageState extends State<TaskDetailPage> {
     final fileName = extractOriginalFileName(url);
 
     // Show initial loading indicator
-    final snackBarController = ScaffoldMessenger.of(context).showSnackBar(
+    ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Row(
           children: [
@@ -574,7 +577,6 @@ class _TaskDetailPageState extends State<TaskDetailPage> {
               ),
             );
           }
-
           // Preload all users at once instead of individually
           if (comments.isNotEmpty) {
             final userIds =
@@ -583,12 +585,9 @@ class _TaskDetailPageState extends State<TaskDetailPage> {
                   if (task.assigneeId != null) task.assigneeId!,
                   ...comments.map((c) => c.userId),
                 }.toList();
-
             // Preload in background
             context.read<UserCubit>().preloadUsers(userIds);
           }
-
-        
 
           return ListView.separated(
             shrinkWrap: true,
@@ -1078,8 +1077,6 @@ class _TaskDetailPageState extends State<TaskDetailPage> {
         return Colors.green.shade100;
       case TaskStatus.canceled:
         return Colors.red.shade100;
-      default:
-        return Colors.grey.shade300;
     }
   }
 
@@ -1114,8 +1111,6 @@ class _TaskDetailPageState extends State<TaskDetailPage> {
         return Icons.arrow_upward;
       case TaskPriority.urgent:
         return Icons.priority_high;
-      default:
-        return Icons.remove;
     }
   }
 
@@ -1129,8 +1124,6 @@ class _TaskDetailPageState extends State<TaskDetailPage> {
         return Colors.orange;
       case TaskPriority.urgent:
         return Colors.red;
-      default:
-        return Colors.blue;
     }
   }
 }

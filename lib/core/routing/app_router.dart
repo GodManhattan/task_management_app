@@ -5,7 +5,7 @@ import 'package:task_management_app/presentation/pages/home/team_page.dart';
 import 'package:task_management_app/presentation/pages/tasks/task_history.page.dart';
 import '../../presentation/pages/auth/login_page.dart';
 import '../../presentation/pages/auth/register_page.dart';
-import '../../presentation/pages/auth/forgot_password_page.dart';
+import '../../presentation/pages/auth/reset_password_page.dart';
 import '../../presentation/pages/home/home_page.dart';
 import '../../presentation/pages/tasks/task_detail_page.dart';
 import '../../presentation/pages/tasks/task_create_page.dart';
@@ -35,7 +35,7 @@ class AppRouter {
       ),
       GoRoute(
         path: '/reset-password',
-        builder: (context, state) => const ForgotPasswordPage(),
+        builder: (context, state) => const ResetPasswordPage(),
       ),
 
       // Main app shell with bottom navigation

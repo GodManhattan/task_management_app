@@ -272,6 +272,7 @@ class SupabaseTaskRepository implements TaskRepository {
   //     eqValue: currentUser.id,
   //   );
   // }
+
   @override
   Stream<List<Task>> subscribeToTasks() {
     return subscribeToTasksDirectly();
