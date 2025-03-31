@@ -83,6 +83,7 @@ class AuthCubit extends Cubit<AuthState> {
     emit(AuthLoading());
     try {
       await _authRepository.signOut();
+      
       emit(AuthUnauthenticated());
     } catch (e) {
       emit(AuthError('Failed to sign out: ${e.toString()}'));
@@ -105,20 +106,6 @@ class AuthCubit extends Cubit<AuthState> {
     return super.close();
   }
 
-  Future<void> refreshAuthState() async {
-    emit(AuthLoading());
-    try {
-      final user = await _authRepository.getCurrentUser();
-      if (user != null) {
-        emit(AuthAuthenticated(user as usermodel.User));
-      } else {
-        emit(AuthUnauthenticated());
-      }
-    } catch (e) {
-      emit(AuthUnauthenticated());
-    }
-  }
-
   Future<void> verifySession() async {
     emit(AuthLoading());
     try {
@@ -129,7 +116,7 @@ class AuthCubit extends Cubit<AuthState> {
       }
       final user = await _authRepository.getCurrentUser();
       if (user != null) {
-        emit(AuthAuthenticated(user as usermodel.User));
+        emit(AuthAuthenticated(user));
       } else {
         emit(AuthUnauthenticated());
       }

@@ -46,5 +46,4 @@ class SupabaseUserRepository implements UserRepository {
 
     return usermodel.User.fromJson(data);
   }
-  
 }

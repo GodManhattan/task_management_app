@@ -23,9 +23,6 @@ class User extends Equatable {
   /// When the user was created in the system
   final DateTime createdAt;
 
-  /// User's role in the system
-  final String role;
-
   /// Whether the user is currently online
   final bool isOnline;
 
@@ -40,7 +37,6 @@ class User extends Equatable {
     this.avatarUrl,
     this.status = UserStatus.active,
     required this.createdAt,
-    this.role = 'member',
     this.isOnline = false,
     this.lastActive,
   });
@@ -54,7 +50,6 @@ class User extends Equatable {
       avatarUrl: json['avatar_url'],
       status: _parseStatus(json['status'] ?? 'active'),
       createdAt: DateTime.parse(json['created_at']),
-      role: json['role'] ?? 'member',
       isOnline: json['is_online'] ?? false,
       lastActive:
           json['last_active'] != null
@@ -72,7 +67,6 @@ class User extends Equatable {
       'avatar_url': avatarUrl,
       'status': status.name,
       'created_at': createdAt.toIso8601String(),
-      'role': role,
       'is_online': isOnline,
       'last_active': lastActive?.toIso8601String(),
     };
@@ -94,7 +88,6 @@ class User extends Equatable {
       avatarUrl: avatarUrl ?? this.avatarUrl,
       status: status ?? this.status,
       createdAt: createdAt,
-      role: role ?? this.role,
       isOnline: isOnline ?? this.isOnline,
       lastActive: lastActive ?? this.lastActive,
     );
@@ -122,9 +115,6 @@ class User extends Equatable {
     );
   }
 
-  /// Check if user is admin
-  bool get isAdmin => role == 'admin';
-
   @override
   List<Object?> get props => [
     id,
@@ -133,7 +123,6 @@ class User extends Equatable {
     avatarUrl,
     status,
     createdAt,
-    role,
     isOnline,
     lastActive,
   ];
