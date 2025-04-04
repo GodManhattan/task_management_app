@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:task_management_app/presentation/pages/team/team_page.dart';
 
 /// Extension methods for GoRouter navigation
 extension GoRouterNavigation on BuildContext {
@@ -44,4 +45,12 @@ extension GoRouterNavigation on BuildContext {
 
   /// Navigate to history
   void goToHistory() => GoRouter.of(this).go('/history');
+
+   /// Navigate to team detail
+  void goToTeamDetail(String teamId) => GoRouter.of(this).go('/team/$teamId');
+
+  /// Navigate to create team
+  void showCreateTeamDialog() {
+    showDialog(context: this, builder: (context) => const CreateTeamDialog());
+  }
 }

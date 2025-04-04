@@ -6,6 +6,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:task_management_app/core/routing/navigation_helpers.dart';
 import 'package:task_management_app/cubits/auth/cubit/auth_cubit.dart' as auth;
+import 'package:task_management_app/cubits/comment/cubit/comment_cubit.dart';
 import 'package:task_management_app/domain/models/user.model.dart';
 import 'package:intl/intl.dart';
 import 'package:task_management_app/domain/models/user.model.dart' as user;
@@ -79,6 +80,7 @@ class _ProfilePageState extends State<ProfilePage> {
     try {
       final authState = context.read<auth.AuthCubit>().state;
       final bucketName = 'avatars';
+
       final baseUrl =
           'https://chwswwssmegejiknagqz.supabase.co/storage/v1/object/public/';
       if (authState is! auth.AuthAuthenticated) return;

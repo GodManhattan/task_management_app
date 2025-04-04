@@ -3,6 +3,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 import 'package:task_management_app/cubits/auth/cubit/auth_cubit.dart';
 import 'package:task_management_app/cubits/task/cubit/task_cubit.dart';
+import 'package:task_management_app/cubits/team/cubit/team_cubit.dart';
 import 'package:task_management_app/domain/models/task.model.dart';
 import 'package:intl/intl.dart';
 
@@ -21,6 +22,16 @@ class _TaskCreatePageState extends State<TaskCreatePage> {
   TaskPriority _priority = TaskPriority.medium;
   final List<String> _tags = [];
   final _tagController = TextEditingController();
+   String? _selectedTeamId;
+
+
+
+  @override
+  void initState() {
+    super.initState();
+    // Load user's teams
+    context.read<TeamCubit>().loadTeams();
+  }
 
   @override
   void dispose() {
@@ -42,6 +53,7 @@ class _TaskCreatePageState extends State<TaskCreatePage> {
           dueDate: _dueDate,
           ownerId: authState.user.id,
           tags: _tags,
+          teamId: _selectedTeamId,
         );
 
         context.read<TaskCubit>().createTask(newTask);
@@ -151,6 +163,43 @@ class _TaskCreatePageState extends State<TaskCreatePage> {
                   ),
                   minLines: 3,
                   maxLines: 5,
+                ),
+                const SizedBox(height: 16),
+
+                 // Team selection dropdown
+                BlocBuilder<TeamCubit, TeamState>(
+                  builder: (context, state) {
+                    if (state is TeamsLoaded) {
+                      final teams = state.teams;
+
+                      return DropdownButtonFormField<String>(
+                        decoration: const InputDecoration(
+                          labelText: 'Assign to Team (Optional)',
+                          border: OutlineInputBorder(),
+                        ),
+                        value: _selectedTeamId,
+                        items: [
+                          const DropdownMenuItem<String>(
+                            value: null,
+                            child: Text('No Team (Personal Task)'),
+                          ),
+                          ...teams.map(
+                            (team) => DropdownMenuItem(
+                              value: team.id,
+                              child: Text(team.name),
+                            ),
+                          ),
+                        ],
+                        onChanged: (value) {
+                          setState(() {
+                            _selectedTeamId = value;
+                          });
+                        },
+                      );
+                    }
+
+                    return const SizedBox.shrink();
+                  },
                 ),
                 const SizedBox(height: 16),
 

@@ -269,4 +269,15 @@ class TaskCubit extends Cubit<TaskState> {
       logger.e('Failed to subscribe to task history', error: e);
     }
   }
+
+  // Add to task_cubit.dart
+  Future<void> loadTeamTasks(String teamId) async {
+    emit(TaskLoading());
+    try {
+      final tasks = await _taskRepository.getTeamTasks(teamId);
+      emit(TasksLoaded(tasks));
+    } catch (e) {
+      emit(TaskError('Failed to load team tasks: ${e.toString()}'));
+    }
+  }
 }

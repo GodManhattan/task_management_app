@@ -34,6 +34,9 @@ abstract class TaskRepository {
   /// Subscribe to real-time task history updates
   Stream<List<Task>> subscribeToTaskHistory();
 
+  /// Get tasks assigned to a specific team
+  Future<List<Task>> getTeamTasks(String teamId);
+
   /// Subscribe to real-time task updates
   // Stream<List<Task>> subscribeToTasksDirectly();
 }

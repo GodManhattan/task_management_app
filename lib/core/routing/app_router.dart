@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:task_management_app/core/routing/global_route_observer.dart';
-import 'package:task_management_app/presentation/pages/home/team_page.dart';
+import 'package:task_management_app/presentation/pages/team/team_detail.page.dart';
+import 'package:task_management_app/presentation/pages/team/team_page.dart';
 import 'package:task_management_app/presentation/pages/tasks/task_history.page.dart';
+import 'package:task_management_app/presentation/pages/team/team_tasks.page.dart';
 import '../../presentation/pages/auth/login_page.dart';
 import '../../presentation/pages/auth/register_page.dart';
 import '../../presentation/pages/auth/reset_password_page.dart';
@@ -86,7 +88,34 @@ class AppRouter {
           ),
 
           // Team tab
-          GoRoute(path: '/team', builder: (context, state) => const TeamPage()),
+          GoRoute(
+            path: '/team',
+            builder: (context, state) => const TeamPage(),
+            routes: [
+              GoRoute(
+                path: ':id',
+                pageBuilder: (context, state) {
+                  final teamId = state.pathParameters['id']!;
+                  return MaterialPage(
+                    key: state.pageKey,
+                    child: TeamDetailPage(teamId: teamId),
+                  );
+                },
+                routes: [
+                  GoRoute(
+                    path: 'tasks',
+                    pageBuilder: (context, state) {
+                      final teamId = state.pathParameters['id']!;
+                      return MaterialPage(
+                        key: state.pageKey,
+                        child: TeamTasksPage(teamId: teamId),
+                      );
+                    },
+                  ),
+                ],
+              ),
+            ],
+          ),
 
           // Profile tab
           GoRoute(

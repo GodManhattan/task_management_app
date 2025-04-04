@@ -16,7 +16,6 @@ void main() {
         avatarUrl: 'https://example.com/avatar.jpg',
         status: UserStatus.active,
         createdAt: now,
-        role: 'admin',
         isOnline: true,
         lastActive: now,
       );
@@ -28,7 +27,6 @@ void main() {
       expect(user.avatarUrl, 'https://example.com/avatar.jpg');
       expect(user.status, UserStatus.active);
       expect(user.createdAt, now);
-      expect(user.role, 'admin');
       expect(user.isOnline, true);
       expect(user.lastActive, now);
     });
@@ -44,7 +42,6 @@ void main() {
       expect(user.fullName, null);
       expect(user.avatarUrl, null);
       expect(user.status, UserStatus.active);
-      expect(user.role, 'member');
       expect(user.isOnline, false);
       expect(user.lastActive, null);
     });
@@ -58,7 +55,6 @@ void main() {
         'avatar_url': 'https://example.com/avatar.jpg',
         'status': 'active',
         'created_at': '2023-01-01T12:00:00Z',
-        'role': 'admin',
         'is_online': true,
         'last_active': '2023-01-01T13:00:00Z',
       };
@@ -73,7 +69,6 @@ void main() {
       expect(user.avatarUrl, 'https://example.com/avatar.jpg');
       expect(user.status, UserStatus.active);
       expect(user.createdAt, DateTime.parse('2023-01-01T12:00:00Z'));
-      expect(user.role, 'admin');
       expect(user.isOnline, true);
       expect(user.lastActive, DateTime.parse('2023-01-01T13:00:00Z'));
     });
@@ -90,7 +85,6 @@ void main() {
         avatarUrl: 'https://example.com/avatar.jpg',
         status: UserStatus.active,
         createdAt: createdAt,
-        role: 'admin',
         isOnline: true,
         lastActive: lastActive,
       );
@@ -105,7 +99,6 @@ void main() {
       expect(json['avatar_url'], 'https://example.com/avatar.jpg');
       expect(json['status'], 'active');
       expect(json['created_at'], createdAt.toIso8601String());
-      expect(json['role'], 'admin');
       expect(json['is_online'], true);
       expect(json['last_active'], lastActive.toIso8601String());
     });
@@ -162,30 +155,6 @@ void main() {
       expect(user.initials, 'T');
     });
 
-    test('isAdmin returns true for admin role', () {
-      // Arrange
-      final user = User(
-        id: '12345',
-        email: 'admin@example.com',
-        role: 'admin',
-        createdAt: DateTime.now(),
-      );
 
-      // Act & Assert
-      expect(user.isAdmin, true);
-    });
-
-    test('isAdmin returns false for non-admin role', () {
-      // Arrange
-      final user = User(
-        id: '12345',
-        email: 'user@example.com',
-        role: 'member',
-        createdAt: DateTime.now(),
-      );
-
-      // Act & Assert
-      expect(user.isAdmin, false);
-    });
   });
 }

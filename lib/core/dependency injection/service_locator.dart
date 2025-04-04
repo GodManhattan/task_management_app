@@ -3,8 +3,11 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:task_management_app/cubits/auth/cubit/auth_cubit.dart';
 import 'package:task_management_app/cubits/comment/cubit/comment_cubit.dart';
 import 'package:task_management_app/cubits/task/cubit/task_cubit.dart';
+import 'package:task_management_app/cubits/team/cubit/team_cubit.dart';
 import 'package:task_management_app/cubits/user/cubit/user_cubit.dart';
+import 'package:task_management_app/data/repositories/supabase_team.repository.dart';
 import 'package:task_management_app/data/repositories/supabase_user.repository.dart';
+import 'package:task_management_app/domain/repositories/team.repository.dart';
 import 'package:task_management_app/domain/repositories/user.repository.dart';
 import '../../data/repositories/supabase_auth.repository.dart';
 import '../../data/repositories/supabase_task.repository.dart';
@@ -63,6 +66,14 @@ Future<void> setupServiceLocator() async {
 
   serviceLocator.registerFactory<TaskCubit>(
     () => TaskCubit(serviceLocator<TaskRepository>()),
+  );
+
+  serviceLocator.registerFactory<TeamRepository>(
+    () => SupabaseTeamRepository(serviceLocator<SupabaseClient>()),
+  );
+
+  serviceLocator.registerFactory<TeamCubit>(
+    () => TeamCubit(serviceLocator<TeamRepository>()),
   );
 }
 

@@ -21,6 +21,7 @@ class Task extends Equatable {
   final DateTime updatedAt;
   final String ownerId;
   final String? assigneeId;
+  final String? teamId;
   final List<String>? tags;
   final List<Comment>? _comments;
 
@@ -36,6 +37,7 @@ class Task extends Equatable {
     required this.updatedAt,
     required this.ownerId,
     this.assigneeId,
+    this.teamId,
     this.tags = const [],
     List<Comment>? comments,
   }) : _comments = comments;
@@ -51,6 +53,7 @@ class Task extends Equatable {
     DateTime? dueDate,
     required String ownerId,
     String? assigneeId,
+    String? teamId,
     List<String>? tags = const [],
   }) {
     final now = DateTime.now();
@@ -65,6 +68,7 @@ class Task extends Equatable {
       updatedAt: now,
       ownerId: ownerId,
       assigneeId: assigneeId,
+      teamId: teamId,
       tags: tags,
     );
   }
@@ -83,6 +87,7 @@ class Task extends Equatable {
       updatedAt: DateTime.parse(json['updated_at']),
       ownerId: json['owner_id'],
       assigneeId: json['assignee_id'],
+      teamId: json['team_id'],
       tags: json['tags'] != null ? List<String>.from(json['tags']) : const [],
     );
   }
@@ -100,6 +105,7 @@ class Task extends Equatable {
       'updated_at': updatedAt.toIso8601String(),
       'owner_id': ownerId,
       'assignee_id': assigneeId,
+      'team_id': teamId,
       'tags': tags,
     };
   }
@@ -112,6 +118,7 @@ class Task extends Equatable {
     TaskPriority? priority,
     DateTime? dueDate,
     String? assigneeId,
+    String? teamId,
     List<String>? tags,
     List<Comment>? comments,
   }) {
@@ -126,6 +133,7 @@ class Task extends Equatable {
       updatedAt: DateTime.now(),
       ownerId: ownerId,
       assigneeId: assigneeId ?? this.assigneeId,
+      teamId: teamId ?? this.teamId,
       tags: tags ?? this.tags,
       comments: comments ?? _comments,
     );
@@ -143,6 +151,7 @@ class Task extends Equatable {
       updatedAt: updatedAt,
       ownerId: ownerId,
       assigneeId: assigneeId,
+      teamId: teamId,
       tags: tags,
       comments: comments,
     );
@@ -182,6 +191,7 @@ class Task extends Equatable {
     updatedAt,
     ownerId,
     assigneeId,
+    teamId,
     tags,
     comments,
   ];
@@ -193,6 +203,6 @@ class Task extends Equatable {
       content: content,
       attachments: attachments,
     );
-    return copyWith(comments: [...?comments, newComment]);
+    return copyWith(comments: [...comments, newComment]);
   }
 }

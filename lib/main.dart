@@ -13,6 +13,7 @@ import 'package:task_management_app/cubits/auth/cubit/auth_cubit.dart'
 import 'package:task_management_app/cubits/auth/cubit/auth_cubit.dart';
 import 'package:task_management_app/cubits/comment/cubit/comment_cubit.dart';
 import 'package:task_management_app/cubits/task/cubit/task_cubit.dart';
+import 'package:task_management_app/cubits/team/cubit/team_cubit.dart';
 import 'package:task_management_app/cubits/user/cubit/user_cubit.dart';
 
 import 'package:task_management_app/data/secure_local_storage.dart';
@@ -77,6 +78,9 @@ void main() async {
           ),
           BlocProvider<CommentCubit>(
             create: (context) => serviceLocator<CommentCubit>(),
+          ),
+          BlocProvider<TeamCubit>(
+            create: (context) => serviceLocator<TeamCubit>(),
           ),
         ],
         child: const MainApp(),

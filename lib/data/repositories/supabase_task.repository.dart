@@ -14,6 +14,8 @@ class SupabaseTaskRepository implements TaskRepository {
   SupabaseTaskRepository(this._supabaseClient)
     : _realtimeService = RealtimeService(_supabaseClient);
 
+  // In supabase_task.repository.dart
+
   @override
   Future<List<Task>> getTasks() async {
     final currentUser = _supabaseClient.auth.currentUser;
@@ -23,13 +25,48 @@ class SupabaseTaskRepository implements TaskRepository {
     }
 
     try {
-      final data = await _supabaseClient
+      // First get user's personal tasks (not team-related)
+      final personalTasks = await _supabaseClient
           .from('tasks')
           .select()
           .or('owner_id.eq.${currentUser.id},assignee_id.eq.${currentUser.id}')
+          .filter('team_id', 'is', null) // Filtrar valores nulos correctamente
           .order('created_at', ascending: false);
 
-      return data.map<Task>((item) => Task.fromJson(item)).toList();
+      // Get user's team IDs directly from teams owned by the user
+      final ownedTeamsResponse = await _supabaseClient
+          .from('teams')
+          .select('id')
+          .eq('owner_id', currentUser.id);
+
+      final ownedTeamIds =
+          ownedTeamsResponse.map((t) => t['id'] as String).toList();
+
+      // Get team IDs where user is a member
+      final memberTeamsResponse = await _supabaseClient
+          .from('team_members')
+          .select('team_id')
+          .eq('user_id', currentUser.id);
+
+      final memberTeamIds =
+          memberTeamsResponse.map((t) => t['team_id'] as String).toList();
+
+      // Combine all team IDs
+      final allTeamIds = [...ownedTeamIds, ...memberTeamIds];
+
+      // If user is part of teams, get team tasks
+      List<dynamic> teamTasks = [];
+      if (allTeamIds.isNotEmpty) {
+      teamTasks = await _supabaseClient
+            .from('tasks')
+            .select()
+            .filter('team_id', 'in', allTeamIds)
+            .order('created_at', ascending: false);
+      }
+
+      // Combine personal and team tasks
+      final allTasks = [...personalTasks, ...teamTasks];
+      return allTasks.map<Task>((item) => Task.fromJson(item)).toList();
     } catch (e) {
       _logger.e('Error in getTasks: $e');
       rethrow;
@@ -297,5 +334,41 @@ class SupabaseTaskRepository implements TaskRepository {
 
   void dispose() {
     _realtimeService.dispose();
+  }
+
+  // Add to supabase_task.repository.dart
+  @override
+  Future<List<Task>> getTeamTasks(String teamId) async {
+    final currentUser = _supabaseClient.auth.currentUser;
+
+    if (currentUser == null) {
+      throw Exception('No authenticated user');
+    }
+
+    try {
+      // Get active team tasks
+      final activeTasks = await _supabaseClient
+          .from('tasks')
+          .select()
+          .eq('team_id', teamId)
+          .neq('status', TaskStatus.completed.name)
+          .neq('status', TaskStatus.canceled.name)
+          .order('created_at', ascending: false);
+
+      // Get completed/canceled team tasks (limited to recent ones)
+      final historyTasks = await _supabaseClient
+          .from('task_history')
+          .select()
+          .eq('team_id', teamId)
+          .order('updated_at', ascending: false)
+          .limit(20); // Limit to recent tasks only
+
+      // Combine and return
+      final allTasks = [...activeTasks, ...historyTasks];
+      return allTasks.map<Task>((item) => Task.fromJson(item)).toList();
+    } catch (e) {
+      _logger.e('Error in getTeamTasks: $e');
+      rethrow;
+    }
   }
 }

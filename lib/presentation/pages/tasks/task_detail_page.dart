@@ -12,6 +12,7 @@ import 'package:task_management_app/core/helpers/file_cache_manager.dart';
 import 'package:task_management_app/cubits/auth/cubit/auth_cubit.dart';
 import 'package:task_management_app/cubits/comment/cubit/comment_cubit.dart';
 import 'package:task_management_app/cubits/task/cubit/task_cubit.dart';
+import 'package:task_management_app/cubits/team/cubit/team_cubit.dart';
 import 'package:task_management_app/cubits/user/cubit/user_cubit.dart';
 import 'package:task_management_app/domain/models/task.model.dart';
 import 'package:task_management_app/domain/models/comment.model.dart';
@@ -357,6 +358,52 @@ class _TaskDetailPageState extends State<TaskDetailPage> {
             ],
           ),
           const SizedBox(height: 16),
+          // Team indicator (if task is assigned to a team)
+          if (task.teamId != null) ...[
+            BlocBuilder<TeamCubit, TeamState>(
+              builder: (context, state) {
+                String teamName = 'Loading team...';
+
+                if (state is TeamsLoaded) {
+                  final team =
+                      state.teams.where((t) => t.id == task.teamId).firstOrNull;
+                  if (team != null) {
+                    teamName = team.name;
+                  }
+                }
+
+                return InkWell(
+                  onTap: () {
+                    if (task.teamId != null) {
+                      context.push('/team/${task.teamId}');
+                    }
+                  },
+                  child: Card(
+                    margin: EdgeInsets.zero,
+                    child: Padding(
+                      padding: const EdgeInsets.all(8.0),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.group, color: Colors.blue),
+                          const SizedBox(width: 8),
+                          Text(
+                            'Team: $teamName',
+                            style: const TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          const Spacer(),
+                          const Icon(Icons.chevron_right),
+                        ],
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
+            const SizedBox(height: 16),
+          ],
 
           // Priority indicator
           Row(
